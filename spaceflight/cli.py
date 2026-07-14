@@ -123,30 +123,66 @@ def cmd_waybar(args: argparse.Namespace) -> int:
     return waybar_main(argv)
 
 
-def cmd_notify_test(_args: argparse.Namespace) -> int:
+def cmd_notify_test(args: argparse.Namespace) -> int:
+    from .notify import send_desktop, test_phone_push, _phone_t24h_body
+    from .settings import load_settings, write_default_config
+
+    settings = load_settings()
+    write_default_config()
+
+    if getattr(args, "phone", False):
+        if not settings.phone_enabled:
+            print("Phone push not configured.")
+            print(f"  1. Install ntfy on your phone: https://ntfy.sh")
+            print(f"  2. Edit {config.CONFIG_DIR / 'config.toml'}")
+            print(f'     set phone.ntfy_topic = "your-secret-topic-name"')
+            print(f"  3. Subscribe to that topic in the app")
+            print(f"  Or: export SPACEFLIGHT_NTFY_TOPIC=your-secret-topic-name")
+            return 1
+        ok = test_phone_push()
+        print("Phone push sent" if ok else "Phone push failed (check topic/server)")
+        return 0 if ok else 1
+
     launches, _ = load_launches()
     if not launches:
         launches, _ = refresh_if_needed(force=True)
-    # Force a sample notification on the soonest launch
-    from .notify import send_notification
-
-    L = launches[0] if launches else None
+    L = None
+    now = datetime.now(timezone.utc)
+    for cand in launches:
+        if cand.is_upcoming(now):
+            L = cand
+            break
+    L = L or (launches[0] if launches else None)
     if not L:
         print("No launches")
         return 1
     stream = L.primary_stream()
-    send_notification(
-        "🚀 Spaceflight test",
+    send_desktop(
+        "🚀 Spaceflight desktop test",
         f"{L.name}\n{L.countdown_label()}\n{L.provider} · {L.location}",
         urgency="normal",
         url=stream.url if stream else None,
+        enabled=True,
     )
-    print("Sent test notification")
+    print("Sent desktop notification")
+    # Preview what the phone T-24h message would look like
+    title, body, watch = _phone_t24h_body(L)
+    print("\n— Phone T-24h preview —")
+    print(title)
+    print(body)
+    if settings.phone_enabled:
+        print(f"\nntfy topic configured: {settings.ntfy_topic[:8]}…@{settings.ntfy_server}")
+        print("Run: spaceflight notify-test --phone")
+    else:
+        print(f"\nPhone not configured. See {config.CONFIG_DIR / 'config.example.toml'}")
     return 0
 
 
 def cmd_status(_args: argparse.Namespace) -> int:
+    from .settings import load_settings
+
     launches, meta = load_launches()
+    settings = load_settings()
     print(f"version:    {__version__}")
     print(f"cache:      {config.LAUNCHES_CACHE}")
     print(f"launches:   {len(launches)}")
@@ -154,6 +190,11 @@ def cmd_status(_args: argparse.Namespace) -> int:
     print(f"daemon:     {'running' if is_running() else 'stopped'}")
     print(f"log:        {config.LOG_FILE}")
     print(f"waybar:     {config.WAYBAR_CACHE}")
+    print(f"desktop:    {'on' if settings.desktop_enabled else 'off'}")
+    if settings.phone_enabled:
+        print(f"phone:      ntfy topic set → {settings.ntfy_server}")
+    else:
+        print(f"phone:      not configured ({config.CONFIG_DIR / 'config.toml'})")
     return 0
 
 
@@ -194,7 +235,8 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--refresh", action="store_true")
     w.set_defaults(func=cmd_waybar)
 
-    n = sub.add_parser("notify-test", help="Send a test desktop notification")
+    n = sub.add_parser("notify-test", help="Test desktop and/or phone (ntfy) notifications")
+    n.add_argument("--phone", action="store_true", help="Send a test push to your phone via ntfy")
     n.set_defaults(func=cmd_notify_test)
 
     st = sub.add_parser("status", help="Show paths and daemon state")

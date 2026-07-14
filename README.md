@@ -61,11 +61,44 @@ systemctl --user status spaceflight
 1. **OVERVIEW** — big live countdown, rocket art, flames near T-0, progress bar, mission blurb  
 2. **VEHICLE** — specs, record, booster serials / landings  
 3. **PAYLOAD** — mission description & orbit  
-4. **PATH** — ASCII projected trajectory + toy telemetry (ascent sketch, not radar)  
-5. **NEWS** — schedule changes / updates from LL2 editors  
-6. **LIVE** — webcast links  
+4. **PATH** — ASCII projected trajectory + toy telemetry (ascent sketch)  
+5. **MISSION** — SpaceX-style page: countdown events, flight stages, **infographic**, brief (`s` cycles TIMELINE / INFOGRAPHIC / BRIEF)  
+6. **NEWS** — schedule changes / updates from LL2 editors  
+7. **LIVE** — webcast links  
 
 Countdowns recompute every frame (~10 fps animations, 1 Hz second digits). Network auto-refresh every **5 minutes**; cache reread every 15s if the daemon updated it.
+
+### Stage notifications (desktop)
+
+When a mission has a timeline (SpaceX CMS or LL2), the daemon notifies for **each stage** as wall-clock passes it — e.g. prop load, Max-Q, MECO, hot-staging, landing burn — not just T-1h / T-15m. Poll speeds up to **15s** inside the T-2h…T+2h window.
+
+### Phone push (T-24h only) via ntfy
+
+No extra system packages — uses HTTPS to [ntfy.sh](https://ntfy.sh) (or your own server).
+
+1. Install the **ntfy** app on your phone (Android / iOS).
+2. Pick a long random topic name (treat it like a password).
+3. Subscribe to that topic in the app.
+4. Configure Spaceflight:
+
+```toml
+# ~/.config/spaceflight/config.toml
+[phone]
+ntfy_topic = "your-long-random-topic-here"
+ntfy_server = "https://ntfy.sh"
+# ntfy_token = ""   # only if you use access control
+t24h_only = true
+```
+
+Or: `export SPACEFLIGHT_NTFY_TOPIC=your-long-random-topic-here`
+
+5. Test: `spaceflight notify-test --phone`
+
+At **T-24h** the phone gets mission name, vehicle, location, local + UTC T-0, and a watch/info link (tappable). Stage spam stays on the desktop only.
+
+### MISSION tab scrolling
+
+On **BRIEF** and **INFOGRAPHIC**, use **`j`/`k`** (or PgUp/PgDn) to scroll. Press **`s`** to cycle views (auto-focuses the detail pane). Long briefs show a `j/k scroll` HUD.
 
 ## Waybar
 

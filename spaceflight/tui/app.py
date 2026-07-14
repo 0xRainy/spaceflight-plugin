@@ -598,12 +598,14 @@ class SpaceflightApp:
             fill(stdscr, row, x, "No provider mission page yet — showing LL2 timeline if any", w, curses.color_pair(C_WARN))
             row += 1
 
+        # Content panes always scroll with j/k when detail-focused (auto on `s`)
         if self.mission_view == 1:
             self._draw_infographic(stdscr, row, x, y + h - row, w, L)
             return
         if self.mission_view == 2:
             lines = self._lines_mission_brief(L, w)
-            self._draw_scroll_lines(stdscr, row, x, y + h - row, w, lines)
+            avail = y + h - row
+            self._draw_scroll_lines(stdscr, row, x, avail, w, lines)
             return
 
         # TIMELINE view
@@ -675,23 +677,43 @@ class SpaceflightApp:
         if not url:
             fill(stdscr, y, x, "No trajectory infographic for this mission.", w, curses.color_pair(C_DIM))
             fill(stdscr, y + 1, x, "SpaceX Starship/Falcon pages often include one — try another launch.", w, curses.color_pair(C_DIM))
-            # fall back to synthetic path
             if h > 6:
                 self._draw_flight(stdscr, y + 3, x, h - 3, w, L)
             return
 
-        fill(stdscr, y, x, f"Trajectory infographic  ·  caching image…", w, curses.color_pair(C_SECTION) | curses.A_BOLD)
-        key = f"{url}|{w}x{max(4, h - 1)}"
+        # Render at full width; height is the "page" size used for initial crop preference
+        # Cache stores the FULL line list so j/k can scroll long graphics.
+        key = f"{url}|w{w}"
         if key not in self._ascii_cache:
+            fill(stdscr, y, x, "Loading infographic…", w, curses.color_pair(C_SECTION) | curses.A_BOLD)
+            stdscr.refresh()
             try:
-                self._ascii_cache[key] = render_image_url(url, w, max(4, h - 1))
+                # Render tall enough to capture the whole diagram (scroll to see more)
+                self._ascii_cache[key] = render_image_url(url, w, max(24, h * 2))
             except Exception as exc:  # noqa: BLE001
                 self._ascii_cache[key] = [f"(render error: {exc})"]
+
         lines = self._ascii_cache[key]
-        for i, line in enumerate(lines):
-            if i >= h - 1:
-                break
-            fill(stdscr, y + 1 + i, x, line, w, curses.color_pair(C_DEFAULT))
+        header = f"Trajectory infographic  ·  j/k scroll  ·  {len(lines)} rows"
+        fill(stdscr, y, x, header, w, curses.color_pair(C_SECTION) | curses.A_BOLD)
+
+        body_h = max(1, h - 1)
+        max_scroll = max(0, len(lines) - body_h)
+        self.detail_scroll = max(0, min(self.detail_scroll, max_scroll))
+        visible = lines[self.detail_scroll : self.detail_scroll + body_h]
+        for i, line in enumerate(visible):
+            # Clean printable only (belt-and-suspenders vs ANSI bleed)
+            clean = "".join(ch if 32 <= ord(ch) < 0x10000 and ch != "\x1b" else " " for ch in line)
+            fill(stdscr, y + 1 + i, x, clean, w, curses.color_pair(C_DEFAULT))
+        if max_scroll > 0:
+            pct = int(self.detail_scroll / max_scroll * 100)
+            put(
+                stdscr,
+                y + h - 1,
+                x + max(0, w - 14),
+                f" {pct:3d}% ↓j ",
+                curses.color_pair(C_WARN) | curses.A_BOLD,
+            )
 
     def _lines_mission_brief(self, L: Launch, width: int) -> list[tuple[str, int, bool]]:
         lines: list[tuple[str, int, bool]] = []
@@ -754,6 +776,8 @@ class SpaceflightApp:
         w: int,
         lines: list[tuple[str, int, bool]],
     ) -> None:
+        if h < 1 or w < 1:
+            return
         max_scroll = max(0, len(lines) - h)
         self.detail_scroll = max(0, min(self.detail_scroll, max_scroll))
         visible = lines[self.detail_scroll : self.detail_scroll + h]
@@ -762,7 +786,15 @@ class SpaceflightApp:
             fill(stdscr, y + i, x, text, w, a)
         if max_scroll > 0:
             pct = int(self.detail_scroll / max_scroll * 100)
-            put(stdscr, y + h - 1, x + max(0, w - 6), f"{pct:3d}%", curses.color_pair(C_DIM))
+            # Sticky scroll HUD so long briefs are obviously scrollable
+            hud = f" j/k scroll {self.detail_scroll + 1}-{min(len(lines), self.detail_scroll + h)}/{len(lines)} {pct:3d}% "
+            put(
+                stdscr,
+                y + h - 1,
+                x + max(0, w - len(hud) - 1),
+                hud,
+                curses.color_pair(C_WARN) | curses.A_BOLD,
+            )
 
     # ── content builders ────────────────────────────────────
 
@@ -982,7 +1014,8 @@ class SpaceflightApp:
             if 0 <= idx < len(self.TABS):
                 self.detail_tab = idx
                 self.detail_scroll = 0
-                self.flash(f"Tab → {self.TABS[self.detail_tab][0]}", 1.2)
+                self.focus = "detail"
+                self.flash(f"Tab → {self.TABS[self.detail_tab][0]}  (j/k scroll)", 1.2)
                 return True
         if key in (
             curses.KEY_F1, curses.KEY_F2, curses.KEY_F3,
@@ -998,13 +1031,13 @@ class SpaceflightApp:
         if key in (ord("s"), ord("S")):
             self.mission_view = (self.mission_view + 1) % 3
             self.detail_scroll = 0
-            # Jump to mission tab so s always feels useful
+            self.focus = "detail"  # so j/k scrolls long brief/infographic
             for i, (_, name) in enumerate(self.TABS):
                 if name == "MISSION":
                     self.detail_tab = i
                     break
             labels = ("TIMELINE", "INFOGRAPHIC", "BRIEF")
-            self.flash(f"Mission view → {labels[self.mission_view]}", 1.5)
+            self.flash(f"Mission view → {labels[self.mission_view]}  (j/k scroll)", 1.8)
             return True
 
         if key in (ord("o"), ord("O")):
@@ -1026,8 +1059,14 @@ class SpaceflightApp:
                 self.flash("No URL")
             return True
 
+        # On MISSION tab (timeline / graphic / long brief), j/k always scroll
+        # the detail pane even if list still has focus — otherwise long briefs
+        # look "broken" when the user never pressed Tab.
+        on_mission = self.TABS[self.detail_tab][1] == "MISSION"
+        scrollable_mission = on_mission and self.mission_view in (0, 1, 2)
+
         # Navigation — context sensitive
-        if self.focus == "list":
+        if self.focus == "list" and not scrollable_mission:
             if key in (curses.KEY_UP, ord("k")):
                 self.selected = max(0, self.selected - 1)
                 self.detail_scroll = 0
@@ -1048,10 +1087,10 @@ class SpaceflightApp:
             elif key in (curses.KEY_LEFT, ord("h")):
                 pass  # stay on list
         else:
-            # DETAIL focus: ←/→ and h/l change TABS (not panels)
-            if key in (curses.KEY_LEFT, ord("h")):
+            # DETAIL focus (or mission content): ←/→ change tabs; j/k scroll
+            if key in (curses.KEY_LEFT, ord("h")) and self.focus == "detail":
                 self.cycle_tab(-1)
-            elif key in (curses.KEY_RIGHT, ord("l")):
+            elif key in (curses.KEY_RIGHT, ord("l")) and self.focus == "detail":
                 self.cycle_tab(+1)
             elif key in (curses.KEY_UP, ord("k")):
                 self.detail_scroll = max(0, self.detail_scroll - 1)
@@ -1066,6 +1105,8 @@ class SpaceflightApp:
             elif key in (curses.KEY_BACKSPACE, 127, 8):
                 self.focus = "list"
                 self.flash("Back to launch queue", 1.0)
+            elif self.focus == "list" and scrollable_mission and key in (curses.KEY_LEFT,):
+                pass
 
         return True
 

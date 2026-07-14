@@ -1,10 +1,13 @@
-"""Render remote images as terminal ASCII/Unicode art (Pillow)."""
+"""Render remote images as clean Unicode art safe for curses (no ANSI)."""
 
 from __future__ import annotations
 
 import hashlib
 import io
 import logging
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import requests
@@ -14,20 +17,19 @@ from ..cache import ensure_dirs
 
 log = logging.getLogger("spaceflight.image")
 
-# Prefer denser Unicode blocks when available
-_BLOCKS = " ░▒▓█"
-_HALF = True  # use ▀▄ half-block technique when height allows
-
 IMG_CACHE = config.CACHE_DIR / "images"
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def _cache_path(url: str) -> Path:
     h = hashlib.sha256(url.encode()).hexdigest()[:24]
-    ext = ".png"
-    if ".webp" in url.lower():
+    lower = url.lower().split("?", 1)[0]
+    if lower.endswith(".webp"):
         ext = ".webp"
-    elif ".jpg" in url.lower() or ".jpeg" in url.lower():
+    elif lower.endswith((".jpg", ".jpeg")):
         ext = ".jpg"
+    else:
+        ext = ".png"
     return IMG_CACHE / f"{h}{ext}"
 
 
@@ -58,14 +60,61 @@ def fetch_image_bytes(url: str, timeout: float = 30.0) -> bytes | None:
         return None
 
 
-def image_to_ascii(
-    data: bytes,
-    width: int,
-    height: int,
-    *,
-    invert: bool | None = None,
-) -> list[str]:
-    """Convert image bytes to list of ASCII/Unicode lines."""
+def strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
+
+
+def _img2txt_render(path: Path, width: int, height: int) -> list[str] | None:
+    """
+    libcaca img2txt — good on engineering diagrams.
+    Must strip ANSI; curses cannot consume escape sequences.
+    """
+    bin_path = shutil.which("img2txt")
+    if not bin_path or not path.exists():
+        return None
+    # Slightly oversample height then crop — img2txt -H is approximate
+    cmd = [
+        bin_path,
+        "-W",
+        str(max(20, width)),
+        "-H",
+        str(max(8, height + 2)),
+        "-f",
+        "utf8",
+        "-d",
+        "fstein",
+        "-c",
+        "1.4",
+        "-b",
+        "0.05",
+        str(path),
+    ]
+    try:
+        out = subprocess.run(cmd, capture_output=True, timeout=20, check=False)
+        if out.returncode != 0 or not out.stdout:
+            return None
+        text = strip_ansi(out.stdout.decode("utf-8", errors="replace"))
+        lines = [ln.rstrip() for ln in text.splitlines()]
+        # Drop fully empty leading/trailing
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        while lines and not lines[-1].strip():
+            lines.pop()
+        # Truncate width (ANSI strip can leave long lines theoretically)
+        lines = [ln[:width] for ln in lines]
+        if not lines:
+            return None
+        return lines
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log.warning("img2txt failed: %s", exc)
+        return None
+
+
+def image_to_ascii(data: bytes, width: int, height: int) -> list[str]:
+    """
+    Pillow half-block renderer (no external binary).
+    Optimized for dark diagrams with light strokes (SpaceX-style).
+    """
     try:
         from PIL import Image, ImageEnhance, ImageFilter, ImageOps
     except ImportError:
@@ -75,118 +124,78 @@ def image_to_ascii(
     height = max(6, height)
 
     try:
-        img = Image.open(io.BytesIO(data))
-        img = img.convert("RGB")
+        img = Image.open(io.BytesIO(data)).convert("RGB")
     except Exception as exc:  # noqa: BLE001
         return [f"(bad image: {exc})"]
 
-    # SpaceX (and similar) graphics: dark navy background + thin light strokes.
-    # Keep dark as empty space; pull bright lines up with contrast.
+    # Emphasize edges / bright strokes on dark backgrounds
     img = ImageOps.autocontrast(img, cutoff=1)
-    img = ImageEnhance.Contrast(img).enhance(2.4)
+    img = ImageEnhance.Contrast(img).enhance(2.2)
     gray = img.convert("L")
-    hist = gray.histogram()
-    total = sum(hist) or 1
-    mean = sum(i * hist[i] for i in range(256)) / total
-    # Only invert if the "ink" is dark on a light page (not SpaceX-style)
-    if invert is None:
-        invert = mean > 160
-    if invert:
+    mean = sum(gray.getdata()) / max(1, gray.width * gray.height)
+    if mean > 150:
+        # Light background → invert so ink is bright for our threshold
         gray = ImageOps.invert(gray)
 
-    # Half-block mode: each terminal row is 2 image rows → better aspect
-    if _HALF and height >= 8:
-        target_w = width
-        target_h = height * 2
-        g = gray.resize((target_w, target_h), Image.Resampling.LANCZOS)
-        px = g.load()
-        samples = [px[x, y] for y in range(0, target_h, 2) for x in range(0, target_w, 2)]
-        samples.sort()
-        # High percentile → only brighter path strokes light up
-        thr = samples[int(len(samples) * 0.82)] if samples else 140
-        thr = max(70, min(200, thr))
-        lines: list[str] = []
-        for y in range(0, target_h - 1, 2):
-            row = []
-            for x in range(target_w):
-                top = px[x, y]
-                bot = px[x, y + 1]
-                # Soft levels for anti-aliased lines
-                if top >= thr + 30 and bot >= thr + 30:
-                    ch = "█"
-                elif top >= thr and bot >= thr:
-                    ch = "▓"
-                elif top >= thr:
-                    ch = "▀"
-                elif bot >= thr:
-                    ch = "▄"
-                elif top >= thr - 20 or bot >= thr - 20:
-                    ch = "·"
-                else:
-                    ch = " "
-                row.append(ch)
-            lines.append("".join(row))
-        return lines
+    # Edge boost helps thin trajectory lines survive downscale
+    edges = gray.filter(ImageFilter.FIND_EDGES)
+    gray = Image.blend(gray, edges, 0.45)
+    gray = ImageEnhance.Contrast(gray).enhance(1.6)
 
-    g = gray.resize((width, height), Image.Resampling.LANCZOS)
+    # Half-blocks: 2 source rows → 1 terminal row
+    tw, th = width, height * 2
+    g = gray.resize((tw, th), Image.Resampling.LANCZOS)
     px = g.load()
-    samples = [px[x, y] for y in range(0, height, 2) for x in range(0, width, 2)]
-    samples.sort()
-    thr = samples[int(len(samples) * 0.8)] if samples else 128
-    lines = []
-    n = len(_BLOCKS) - 1
-    for y in range(height):
+
+    samples = sorted(px[x, y] for y in range(0, th, 2) for x in range(0, tw, 2))
+    if not samples:
+        return ["(empty image)"]
+    # Keep only brighter strokes
+    thr = samples[int(len(samples) * 0.78)]
+    thr = max(55, min(190, thr))
+
+    lines: list[str] = []
+    for y in range(0, th - 1, 2):
         row = []
-        for x in range(width):
-            v = px[x, y]
-            # hard bias toward empty background
-            if v < thr - 15:
-                row.append(" ")
+        for x in range(tw):
+            top, bot = px[x, y], px[x, y + 1]
+            if top >= thr + 25 and bot >= thr + 25:
+                ch = "█"
+            elif top >= thr and bot >= thr:
+                ch = "▓"
+            elif top >= thr:
+                ch = "▀"
+            elif bot >= thr:
+                ch = "▄"
+            elif top >= thr - 18 or bot >= thr - 18:
+                ch = "·"
             else:
-                row.append(_BLOCKS[min(n, max(0, (v - thr + 40) * n // 120))])
+                ch = " "
+            row.append(ch)
         lines.append("".join(row))
     return lines
 
 
-def _img2txt_render(path: Path, width: int) -> list[str] | None:
-    """libcaca img2txt — often better on thin-line engineering graphics."""
-    import shutil
-    import subprocess
-
-    bin_path = shutil.which("img2txt")
-    if not bin_path:
-        return None
-    try:
-        out = subprocess.run(
-            [bin_path, "-W", str(width), "-f", "utf8", str(path)],
-            capture_output=True,
-            timeout=15,
-            check=False,
-        )
-        if out.returncode != 0 or not out.stdout:
-            return None
-        text = out.stdout.decode("utf-8", errors="replace")
-        lines = [ln.rstrip("\n") for ln in text.splitlines() if ln.strip() or True]
-        # Drop empty trailing
-        while lines and not lines[-1].strip():
-            lines.pop()
-        return lines or None
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-
-
 def render_url(url: str, width: int, height: int) -> list[str]:
+    """
+    Full-resolution line list for the given cell box.
+    Caller scrolls if len(lines) > height.
+    """
     data = fetch_image_bytes(url)
     if not data:
         return ["(infographic unavailable — offline or missing URL)"]
     path = _cache_path(url)
-    # Prefer img2txt when present (great on SpaceX trajectory diagrams)
-    lines = _img2txt_render(path, width)
-    if lines:
-        # Fit height if needed
-        if len(lines) > height:
-            # center-crop vertically
-            extra = len(lines) - height
-            lines = lines[extra // 2 : extra // 2 + height]
-        return lines
-    return image_to_ascii(data, width, height)
+
+    # Prefer img2txt (stripped), fall back to Pillow
+    lines = _img2txt_render(path, width, max(height, 12))
+    if lines is None:
+        lines = image_to_ascii(data, width, max(height, 12))
+
+    # If almost empty, try the other renderer
+    density = sum(1 for ln in lines for c in ln if c.strip()) / max(1, sum(len(ln) for ln in lines))
+    if density < 0.01 and data:
+        alt = image_to_ascii(data, width, max(height, 12))
+        if sum(1 for ln in alt for c in ln if c.strip()) > density * sum(len(ln) for ln in lines):
+            lines = alt
+
+    return lines
