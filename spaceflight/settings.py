@@ -26,8 +26,7 @@ ntfy_topic = ""
 ntfy_server = "https://ntfy.sh"
 # Optional access token if the topic is restricted
 ntfy_token = ""
-# Only send the T-24h "tomorrow's launch" alert to the phone
-t24h_only = true
+# Phone alerts at T-24h, T-1h, T-10m (fixed in app)
 
 [desktop]
 # Keep desktop notify-send alerts (thresholds + stages)
@@ -40,7 +39,6 @@ class Settings:
     ntfy_topic: str = ""
     ntfy_server: str = "https://ntfy.sh"
     ntfy_token: str = ""
-    phone_t24h_only: bool = True
     desktop_enabled: bool = True
 
     @property
@@ -94,7 +92,6 @@ def load_settings() -> Settings:
     s.ntfy_topic = str(phone.get("ntfy_topic") or data.get("ntfy_topic") or "")
     s.ntfy_server = str(phone.get("ntfy_server") or data.get("ntfy_server") or "https://ntfy.sh")
     s.ntfy_token = str(phone.get("ntfy_token") or data.get("ntfy_token") or "")
-    s.phone_t24h_only = bool(phone.get("t24h_only", data.get("t24h_only", True)))
     s.desktop_enabled = bool(desktop.get("enabled", data.get("desktop_enabled", True)))
 
     if env_topic:

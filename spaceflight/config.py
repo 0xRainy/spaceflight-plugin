@@ -41,13 +41,18 @@ MIN_FETCH_INTERVAL_SEC = 300  # 5 minutes between network pulls
 DAEMON_POLL_SEC = 60  # wake every minute to check countdowns / maybe refresh
 CACHE_STALE_SEC = 600  # consider cache stale after 10 min
 
-# Notification thresholds (seconds before NET)
+# Desktop countdown thresholds (seconds before NET)
 NOTIFY_THRESHOLDS = (
     (24 * 3600, "T-24h"),
-    (6 * 3600, "T-6h"),
     (60 * 60, "T-1h"),
-    (15 * 60, "T-15m"),
-    (5 * 60, "T-5m"),
+    (10 * 60, "T-10m"),
+)
+
+# Phone (ntfy) push times — mission summary only, no stage spam
+PHONE_NOTIFY_THRESHOLDS = (
+    (24 * 3600, "T-24h"),
+    (60 * 60, "T-1h"),
+    (10 * 60, "T-10m"),
 )
 
 # Status colors (curses color pair names conceptually)

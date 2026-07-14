@@ -142,8 +142,8 @@ def _stream_url(L: Launch) -> str | None:
     return None
 
 
-def _phone_t24h_body(L: Launch) -> tuple[str, str, str | None]:
-    """Build T-24h phone notification content."""
+def _phone_alert_body(L: Launch, label: str) -> tuple[str, str, str | None]:
+    """Build phone notification: mission, vehicle, location, T-0, watch link."""
     mission = L.short_name() or L.name
     vehicle = L.vehicle_name()
     location = ", ".join(p for p in (L.pad, L.location) if p) or "TBD"
@@ -155,8 +155,14 @@ def _phone_t24h_body(L: Launch) -> tuple[str, str, str | None]:
         t0 = "NET TBD"
 
     watch = _stream_url(L)
-    title = f"🚀 Launch tomorrow: {mission}"
+    headline = {
+        "T-24h": f"Launch in 24 hours: {mission}",
+        "T-1h": f"Launch in 1 hour: {mission}",
+        "T-10m": f"Launch in 10 minutes: {mission}",
+    }.get(label, f"Launch {label}: {mission}")
+
     lines = [
+        f"When:     {label}",
         f"Mission:  {mission}",
         f"Vehicle:  {vehicle}",
         f"Location: {location}",
@@ -168,7 +174,12 @@ def _phone_t24h_body(L: Launch) -> tuple[str, str, str | None]:
         lines.append(f"Watch:    {watch}")
     if L.mission_brief and L.mission_brief.page_url:
         lines.append(f"Info:     {L.mission_brief.page_url}")
-    return title, "\n".join(lines), watch
+    return headline, "\n".join(lines), watch
+
+
+# Back-compat alias
+def _phone_t24h_body(L: Launch) -> tuple[str, str, str | None]:
+    return _phone_alert_body(L, "T-24h")
 
 
 def _notify_stage(L: Launch, event: TimelineEvent, settings: Settings) -> None:
@@ -194,8 +205,8 @@ def _notify_stage(L: Launch, event: TimelineEvent, settings: Settings) -> None:
 
 def check_and_notify(launches: list[Launch], now: datetime | None = None) -> list[str]:
     """
-    Threshold countdowns + per-stage events (desktop).
-    Phone (ntfy): T-24h only with mission/vehicle/location/T-0/watch link.
+    Desktop: countdown thresholds + flight stages.
+    Phone (ntfy): T-24h, T-1h, T-10m with mission/vehicle/location/T-0/watch.
     """
     now = now or datetime.now(timezone.utc)
     settings = load_settings()
@@ -208,7 +219,8 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
         secs = L.seconds_to_net(now)
         if secs is None:
             continue
-        if -2 * 3600 <= secs <= 48 * 3600:
+        # Include up to ~26h out so T-24h has a chance to fire
+        if -2 * 3600 <= secs <= 26 * 3600:
             candidates.append(L)
 
     for L in candidates:
@@ -231,7 +243,7 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                 sent[key] = now.isoformat()
                 fired.append(key)
 
-        # Classic T-minus thresholds
+        # Classic T-minus thresholds (desktop + phone)
         if secs >= 0:
             for threshold, label in config.NOTIFY_THRESHOLDS:
                 if secs > threshold:
@@ -239,8 +251,9 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                 key = f"{L.id}:{label}"
                 if key in sent:
                     continue
-                slack = max(threshold * 0.2, 600)
-                if secs < threshold - slack and threshold > 900:
+                # Missed window entirely (daemon was down) — mark without spam
+                slack = max(threshold * 0.15, 120)
+                if secs < threshold - slack and threshold > 600:
                     sent[key] = now.isoformat()
                     continue
 
@@ -265,26 +278,43 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                     url=_stream_url(L),
                     enabled=settings.desktop_enabled,
                 )
-
-                # Phone: only the T-24h alert (user request)
-                if label == "T-24h" and settings.phone_enabled:
-                    ptitle, pbody, watch = _phone_t24h_body(L)
-                    phone_key = f"{L.id}:phone:T-24h"
-                    if phone_key not in sent:
-                        ok = send_phone(
-                            ptitle,
-                            pbody,
-                            settings=settings,
-                            click_url=watch,
-                            tags="rocket,warning",
-                            priority=4,
-                        )
-                        if ok:
-                            sent[phone_key] = now.isoformat()
-                            fired.append(phone_key)
-
                 sent[key] = now.isoformat()
                 fired.append(key)
+
+            # Phone pushes: T-24h / T-1h / T-10m (independent keys)
+            if settings.phone_enabled:
+                for threshold, label in config.PHONE_NOTIFY_THRESHOLDS:
+                    if secs > threshold:
+                        continue
+                    phone_key = f"{L.id}:phone:{label}"
+                    if phone_key in sent:
+                        continue
+                    slack = max(threshold * 0.15, 120)
+                    if secs < threshold - slack and threshold > 600:
+                        sent[phone_key] = now.isoformat()
+                        continue
+
+                    ptitle, pbody, watch = _phone_alert_body(L, label)
+                    priority = 5 if label == "T-10m" else (4 if label == "T-1h" else 3)
+                    tags = {
+                        "T-24h": "rocket,calendar",
+                        "T-1h": "rocket,warning",
+                        "T-10m": "rocket,rotating_light",
+                    }.get(label, "rocket")
+                    ok = send_phone(
+                        ptitle,
+                        pbody,
+                        settings=settings,
+                        click_url=watch,
+                        tags=tags,
+                        priority=priority,
+                    )
+                    if ok:
+                        sent[phone_key] = now.isoformat()
+                        fired.append(phone_key)
+                    else:
+                        # Don't mark sent on failure — retry next poll
+                        pass
 
         # Stage events (desktop only — too chatty for phone)
         current_rel = -secs
