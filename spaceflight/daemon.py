@@ -20,6 +20,7 @@ class Daemon:
         # poll_sec: how often we recompute countdowns/notifications (cheap).
         # Network refresh is separately gated to MIN_FETCH_INTERVAL_SEC (5 min).
         self.poll_sec = poll_sec
+        self._base_poll = poll_sec
         self._stop = False
 
     def stop(self, *_args) -> None:
@@ -58,6 +59,21 @@ class Daemon:
                 append_log(f"notifications: {', '.join(fired)}")
 
             emit_waybar(refresh=False)
+
+            # Poll faster near/during flight so stage events fire promptly
+            from datetime import datetime, timezone
+
+            now = datetime.now(timezone.utc)
+            hot = False
+            for L in launches:
+                secs = L.seconds_to_net(now)
+                if secs is None:
+                    continue
+                # T-2h through T+2h, or any launch with stage data in that window
+                if -7200 <= secs <= 7200:
+                    hot = True
+                    break
+            self.poll_sec = 15 if hot else self._base_poll
         except Exception as exc:  # noqa: BLE001
             append_log(f"tick error: {exc}")
 

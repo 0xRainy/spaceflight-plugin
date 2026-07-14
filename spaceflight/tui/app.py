@@ -20,6 +20,7 @@ from ..models import Launch
 from ..notify import open_url
 from . import art
 from .flightpath import render_flightpath, telemetry_readout, vehicle_progress
+from .image_ascii import render_url as render_image_url
 from .widgets import fill, panel_border, put
 
 # ── colors ──────────────────────────────────────────────────────
@@ -97,14 +98,15 @@ def status_color(L: Launch) -> int:
 
 class SpaceflightApp:
     FILTERS = ("ALL", "GO", "HOLD", "LIVE", "SpX")
-    # Short labels shown in tab bar — use ←/→ or 1-6 to switch
+    # Short labels shown in tab bar — use ←/→ or 1-7 / t to switch
     TABS = (
         ("1:OVER", "OVERVIEW"),
         ("2:VEH", "VEHICLE"),
         ("3:PAY", "PAYLOAD"),
         ("4:PATH", "FLIGHT"),
-        ("5:NEWS", "UPDATES"),
-        ("6:LIVE", "STREAMS"),
+        ("5:MSN", "MISSION"),  # provider page: countdown + flight timeline + infographic
+        ("6:NEWS", "UPDATES"),
+        ("7:LIVE", "STREAMS"),
     )
 
     def __init__(self) -> None:
@@ -128,6 +130,8 @@ class SpaceflightApp:
         self.last_cache_reload = 0.0
         self.auto_refresh_sec = config.MIN_FETCH_INTERVAL_SEC  # 5 min
         self.frame_ms = 100  # ~10 fps animation, countdown still live
+        self._ascii_cache: dict[str, list[str]] = {}  # url|wxh → lines
+        self.mission_view = 0  # 0=timeline 1=infographic 2=brief
 
     # ── data ────────────────────────────────────────────────
 
@@ -236,7 +240,10 @@ class SpaceflightApp:
         L = self.current()
         if not L:
             return
+        brief_url = L.mission_brief.page_url if L.mission_brief else ""
         for url in (
+            brief_url,
+            *(L.info_urls or []),
             L.flightclub_url,
             (L.primary_stream().url if L.primary_stream() else ""),
             L.vehicle.info_url,
@@ -431,6 +438,8 @@ class SpaceflightApp:
             self._draw_scroll_lines(stdscr, content_top, ix, content_h, inner_w, self._lines_payload(L, inner_w))
         elif tab_id == "FLIGHT":
             self._draw_flight(stdscr, content_top, ix, content_h, inner_w, L)
+        elif tab_id == "MISSION":
+            self._draw_mission(stdscr, content_top, ix, content_h, inner_w, L)
         elif tab_id == "UPDATES":
             self._draw_scroll_lines(stdscr, content_top, ix, content_h, inner_w, self._lines_updates(L, inner_w))
         else:
@@ -555,6 +564,155 @@ class SpaceflightApp:
             lines.append(("", C_DEFAULT, False))
             lines.append((f"LATEST  {when} @{u.created_by}", C_MAGENTA, True))
             lines.extend(self._wrap(u.comment, width, C_DEFAULT, False))
+        return lines
+
+    def _draw_mission(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> None:
+        """SpaceX-style mission page: countdown + flight timeline + infographic."""
+        brief = L.mission_brief
+        now = datetime.now(timezone.utc)
+        secs = L.seconds_to_net(now)
+
+        # Sub-mode bar
+        modes = ["TIMELINE", "INFOGRAPHIC", "BRIEF"]
+        bar_x = x
+        for i, m in enumerate(modes):
+            label = f" {m} "
+            on = i == self.mission_view
+            attr = curses.color_pair(C_TAB_ON if on else C_TAB_OFF) | (curses.A_BOLD if on else 0)
+            fill(stdscr, y, bar_x, label, len(label), attr)
+            bar_x += len(label) + 1
+        put(stdscr, y, min(x + w - 18, bar_x + 1), "s cycle view", curses.color_pair(C_DIM) | curses.A_DIM)
+
+        row = y + 1
+        if brief:
+            title = brief.title or L.short_name()
+            fill(stdscr, row, x, f"✦ {title}", w, curses.color_pair(C_TITLE) | curses.A_BOLD)
+            row += 1
+            if brief.page_url:
+                fill(stdscr, row, x, brief.page_url[:w], w, curses.color_pair(C_ACCENT))
+                row += 1
+            if brief.disclaimer:
+                fill(stdscr, row, x, brief.disclaimer[:w], w, curses.color_pair(C_DIM))
+                row += 1
+        else:
+            fill(stdscr, row, x, "No provider mission page yet — showing LL2 timeline if any", w, curses.color_pair(C_WARN))
+            row += 1
+
+        if self.mission_view == 1:
+            self._draw_infographic(stdscr, row, x, y + h - row, w, L)
+            return
+        if self.mission_view == 2:
+            lines = self._lines_mission_brief(L, w)
+            self._draw_scroll_lines(stdscr, row, x, y + h - row, w, lines)
+            return
+
+        # TIMELINE view
+        cur = L.current_stage(now)
+        nxt = L.next_stage(now)
+        if cur:
+            fill(
+                stdscr,
+                row,
+                x,
+                f"NOW  {cur.label_t()}  {cur.description}"[:w],
+                w,
+                curses.color_pair(C_LIVE if (secs is not None and secs <= 0) else C_GO) | curses.A_BOLD,
+            )
+            row += 1
+        if nxt:
+            fill(
+                stdscr,
+                row,
+                x,
+                f"NEXT {nxt.label_t()}  {nxt.description}"[:w],
+                w,
+                curses.color_pair(C_WARN) | curses.A_BOLD,
+            )
+            row += 1
+
+        # Split countdown / flight
+        countdown = (brief.countdown_events if brief else []) or [
+            e for e in L.timeline if e.phase == "countdown" or e.relative_sec < 0
+        ]
+        flight = (brief.flight_events if brief else []) or [
+            e for e in L.timeline if e.phase == "flight" or e.relative_sec >= 0
+        ]
+        if not countdown and not flight:
+            fill(stdscr, row + 1, x, "No timeline data for this launch yet.", w, curses.color_pair(C_DIM))
+            fill(stdscr, row + 2, x, "SpaceX missions usually publish full countdown + flight stages.", w, curses.color_pair(C_DIM))
+            return
+
+        current_rel = -secs if secs is not None else None
+        lines: list[tuple[str, int, bool]] = []
+        if countdown:
+            lines.append((f"── {(brief.countdown_title if brief else 'COUNTDOWN')} ──", C_SECTION, True))
+            for e in countdown:
+                mark, col, bold = self._event_style(e, current_rel)
+                lines.append((f"{mark} {e.label_t():10}  {e.description}", col, bold))
+            lines.append(("", C_DEFAULT, False))
+        if flight:
+            lines.append((f"── {(brief.flight_title if brief else 'FLIGHT TIMELINE')} ──", C_SECTION, True))
+            for e in flight:
+                mark, col, bold = self._event_style(e, current_rel)
+                lines.append((f"{mark} {e.label_t():10}  {e.description}", col, bold))
+
+        self._draw_scroll_lines(stdscr, row, x, y + h - row, w, lines)
+
+    def _event_style(self, e, current_rel: float | None) -> tuple[str, int, bool]:
+        if current_rel is None:
+            return "·", C_DEFAULT, False
+        if e.relative_sec <= current_rel:
+            # past / current
+            if abs(e.relative_sec - current_rel) < 15:
+                return "▶", C_LIVE, True
+            return "✓", C_GO, False
+        return "·", C_DIM, False
+
+    def _draw_infographic(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> None:
+        url = ""
+        if L.mission_brief and L.mission_brief.infographic_url:
+            url = L.mission_brief.infographic_url
+        if not url:
+            fill(stdscr, y, x, "No trajectory infographic for this mission.", w, curses.color_pair(C_DIM))
+            fill(stdscr, y + 1, x, "SpaceX Starship/Falcon pages often include one — try another launch.", w, curses.color_pair(C_DIM))
+            # fall back to synthetic path
+            if h > 6:
+                self._draw_flight(stdscr, y + 3, x, h - 3, w, L)
+            return
+
+        fill(stdscr, y, x, f"Trajectory infographic  ·  caching image…", w, curses.color_pair(C_SECTION) | curses.A_BOLD)
+        key = f"{url}|{w}x{max(4, h - 1)}"
+        if key not in self._ascii_cache:
+            try:
+                self._ascii_cache[key] = render_image_url(url, w, max(4, h - 1))
+            except Exception as exc:  # noqa: BLE001
+                self._ascii_cache[key] = [f"(render error: {exc})"]
+        lines = self._ascii_cache[key]
+        for i, line in enumerate(lines):
+            if i >= h - 1:
+                break
+            fill(stdscr, y + 1 + i, x, line, w, curses.color_pair(C_DEFAULT))
+
+    def _lines_mission_brief(self, L: Launch, width: int) -> list[tuple[str, int, bool]]:
+        lines: list[tuple[str, int, bool]] = []
+        brief = L.mission_brief
+        if not brief:
+            lines.append(("No provider brief. Press r after rate-limit cools to enrich SpaceX.", C_DIM, False))
+            if L.payload.description:
+                lines.append(("", C_DEFAULT, False))
+                lines.extend(self._wrap(L.payload.description, width, C_DEFAULT, False))
+            return lines
+        lines.append((brief.title, C_TITLE, True))
+        if brief.page_url:
+            lines.extend(self._wrap(brief.page_url, width, C_ACCENT, False))
+        lines.append(("", C_DEFAULT, False))
+        for p in brief.paragraphs:
+            lines.extend(self._wrap(p, width, C_DEFAULT, False))
+            lines.append(("", C_DEFAULT, False))
+        if brief.infographic_url:
+            lines.append(("Infographic:", C_SECTION, True))
+            lines.extend(self._wrap(brief.infographic_url, width, C_DIM, False))
+            lines.append(("(press s → INFOGRAPHIC view)", C_DIM, False))
         return lines
 
     def _draw_flight(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> None:
@@ -766,7 +924,7 @@ class SpaceflightApp:
             fill(stdscr, y, 0, f" ✦ {self.message}", w, curses.color_pair(C_WARN) | curses.A_BOLD)
         else:
             keys1 = (
-                "j/k list  Tab panel  ←/→ or t or 1-6 DETAIL TABS  "
+                "j/k nav  Tab panel  ←/→ t 1-7 tabs  s mission-view  "
                 "f filter  o stream  r refresh  q quit"
             )
             fill(stdscr, y, 0, " " * w, w, curses.color_pair(C_FOOTER))
@@ -811,26 +969,42 @@ class SpaceflightApp:
             self.focus = "list"
             return True
 
-        # Detail tabs — ALWAYS available (this was the bug: hard to discover)
-        # t / T cycle, numbers jump, [ ] also, and when detail-focused: h/l and ←/→
+        # Detail tabs — ALWAYS available
         if key in (ord("t"), ord("T"), ord("]"), ord(".")):
             self.cycle_tab(+1)
             return True
         if key in (ord("["), ord(",")):
             self.cycle_tab(-1)
             return True
-        # Number keys 1-6 (and numpad if available)
-        if ord("1") <= key <= ord("6"):
-            self.detail_tab = key - ord("1")
-            self.detail_scroll = 0
-            self.flash(f"Tab → {self.TABS[self.detail_tab][0]}", 1.2)
-            return True
+        # Number keys 1-7
+        if ord("1") <= key <= ord("0") + len(self.TABS):
+            idx = key - ord("1")
+            if 0 <= idx < len(self.TABS):
+                self.detail_tab = idx
+                self.detail_scroll = 0
+                self.flash(f"Tab → {self.TABS[self.detail_tab][0]}", 1.2)
+                return True
         if key in (
             curses.KEY_F1, curses.KEY_F2, curses.KEY_F3,
-            curses.KEY_F4, curses.KEY_F5, curses.KEY_F6,
+            curses.KEY_F4, curses.KEY_F5, curses.KEY_F6, curses.KEY_F7,
         ):
-            self.detail_tab = key - curses.KEY_F1
+            idx = key - curses.KEY_F1
+            if idx < len(self.TABS):
+                self.detail_tab = idx
+                self.detail_scroll = 0
+                return True
+
+        # Mission sub-views (timeline / infographic / brief)
+        if key in (ord("s"), ord("S")):
+            self.mission_view = (self.mission_view + 1) % 3
             self.detail_scroll = 0
+            # Jump to mission tab so s always feels useful
+            for i, (_, name) in enumerate(self.TABS):
+                if name == "MISSION":
+                    self.detail_tab = i
+                    break
+            labels = ("TIMELINE", "INFOGRAPHIC", "BRIEF")
+            self.flash(f"Mission view → {labels[self.mission_view]}", 1.5)
             return True
 
         if key in (ord("o"), ord("O")):

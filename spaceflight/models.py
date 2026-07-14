@@ -172,6 +172,97 @@ class WeatherInfo:
 
 
 @dataclass
+class TimelineEvent:
+    """
+    A countdown or flight-stage event relative to NET (liftoff).
+    relative_sec < 0 → pre-launch (T-), >= 0 → post-liftoff (T+).
+    """
+
+    relative_sec: int
+    description: str
+    phase: str = ""  # countdown | flight | other
+    source: str = ""
+    raw_time: str = ""  # original "HH:MM:SS" if known
+
+    def label_t(self) -> str:
+        s = abs(int(self.relative_sec))
+        h, rem = divmod(s, 3600)
+        m, sec = divmod(rem, 60)
+        stamp = f"{h:02d}:{m:02d}:{sec:02d}"
+        return f"T-{stamp}" if self.relative_sec < 0 else f"T+{stamp}"
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> TimelineEvent:
+        return cls(
+            relative_sec=int(d.get("relative_sec") or 0),
+            description=d.get("description") or "",
+            phase=d.get("phase") or "",
+            source=d.get("source") or "",
+            raw_time=d.get("raw_time") or "",
+        )
+
+
+@dataclass
+class MissionBrief:
+    """Provider mission-page package (e.g. SpaceX CMS) — timelines, copy, infographic."""
+
+    provider: str = ""
+    mission_id: str = ""
+    title: str = ""
+    page_url: str = ""
+    hero_image_url: str = ""
+    infographic_url: str = ""
+    countdown_title: str = "Countdown"
+    flight_title: str = "Flight Timeline"
+    disclaimer: str = ""
+    paragraphs: list[str] = field(default_factory=list)
+    countdown_events: list[TimelineEvent] = field(default_factory=list)
+    flight_events: list[TimelineEvent] = field(default_factory=list)
+    webcasts: list[StreamLink] = field(default_factory=list)
+
+    def all_events(self) -> list[TimelineEvent]:
+        return list(self.countdown_events) + list(self.flight_events)
+
+    def to_dict(self) -> dict:
+        return {
+            "provider": self.provider,
+            "mission_id": self.mission_id,
+            "title": self.title,
+            "page_url": self.page_url,
+            "hero_image_url": self.hero_image_url,
+            "infographic_url": self.infographic_url,
+            "countdown_title": self.countdown_title,
+            "flight_title": self.flight_title,
+            "disclaimer": self.disclaimer,
+            "paragraphs": self.paragraphs,
+            "countdown_events": [e.to_dict() for e in self.countdown_events],
+            "flight_events": [e.to_dict() for e in self.flight_events],
+            "webcasts": [s.to_dict() for s in self.webcasts],
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> MissionBrief:
+        return cls(
+            provider=d.get("provider") or "",
+            mission_id=d.get("mission_id") or "",
+            title=d.get("title") or "",
+            page_url=d.get("page_url") or "",
+            hero_image_url=d.get("hero_image_url") or "",
+            infographic_url=d.get("infographic_url") or "",
+            countdown_title=d.get("countdown_title") or "Countdown",
+            flight_title=d.get("flight_title") or "Flight Timeline",
+            disclaimer=d.get("disclaimer") or "",
+            paragraphs=list(d.get("paragraphs") or []),
+            countdown_events=[TimelineEvent.from_dict(e) for e in (d.get("countdown_events") or [])],
+            flight_events=[TimelineEvent.from_dict(e) for e in (d.get("flight_events") or [])],
+            webcasts=[StreamLink.from_dict(s) for s in (d.get("webcasts") or [])],
+        )
+
+
+@dataclass
 class Launch:
     id: str
     name: str
@@ -209,8 +300,47 @@ class Launch:
     programs: list[str] = field(default_factory=list)
     mission_patches: list[str] = field(default_factory=list)
     source: str = "ll2"
+    # Provider mission package (SpaceX CMS, etc.) + generic LL2 timeline
+    mission_brief: MissionBrief | None = None
+    timeline: list[TimelineEvent] = field(default_factory=list)  # combined / LL2
+    info_urls: list[str] = field(default_factory=list)
 
     # ── derived ──────────────────────────────────────────────
+
+    def stage_events(self) -> list[TimelineEvent]:
+        """All known stage events, prefer mission_brief when present."""
+        if self.mission_brief and self.mission_brief.all_events():
+            return self.mission_brief.all_events()
+        return list(self.timeline)
+
+    def current_stage(self, now: datetime | None = None) -> TimelineEvent | None:
+        """Most recent event that has already occurred (or next pre-launch milestone)."""
+        now = now or datetime.now(timezone.utc)
+        secs = self.seconds_to_net(now)
+        if secs is None:
+            return None
+        events = sorted(self.stage_events(), key=lambda e: e.relative_sec)
+        if not events:
+            return None
+        # Map wall time to relative: at NET, relative=0; before NET relative is negative
+        # current_rel = -secs_to_net  (so T-5min → rel=-300, T+10s → rel=+10)
+        current_rel = -secs
+        past = [e for e in events if e.relative_sec <= current_rel]
+        if past:
+            return past[-1]
+        return events[0]  # next upcoming pre-launch event
+
+    def next_stage(self, now: datetime | None = None) -> TimelineEvent | None:
+        now = now or datetime.now(timezone.utc)
+        secs = self.seconds_to_net(now)
+        if secs is None:
+            return None
+        current_rel = -secs
+        events = sorted(self.stage_events(), key=lambda e: e.relative_sec)
+        for e in events:
+            if e.relative_sec > current_rel:
+                return e
+        return None
 
     def seconds_to_net(self, now: datetime | None = None) -> float | None:
         if not self.net:
@@ -323,11 +453,15 @@ class Launch:
             "programs": self.programs,
             "mission_patches": self.mission_patches,
             "source": self.source,
+            "mission_brief": self.mission_brief.to_dict() if self.mission_brief else None,
+            "timeline": [e.to_dict() for e in self.timeline],
+            "info_urls": self.info_urls,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> Launch:
         weather = d.get("weather")
+        brief = d.get("mission_brief")
         return cls(
             id=str(d.get("id") or ""),
             name=d.get("name") or "",
@@ -365,7 +499,29 @@ class Launch:
             programs=list(d.get("programs") or []),
             mission_patches=list(d.get("mission_patches") or []),
             source=d.get("source") or "ll2",
+            mission_brief=MissionBrief.from_dict(brief) if brief else None,
+            timeline=[TimelineEvent.from_dict(e) for e in (d.get("timeline") or [])],
+            info_urls=list(d.get("info_urls") or []),
         )
+
+
+def parse_hms_to_seconds(text: str) -> int | None:
+    """Parse 'HH:MM:SS' or 'H:MM:SS' or 'MM:SS' into seconds."""
+    if not text:
+        return None
+    parts = text.strip().split(":")
+    try:
+        if len(parts) == 3:
+            h, m, s = (int(p) for p in parts)
+            return h * 3600 + m * 60 + s
+        if len(parts) == 2:
+            m, s = (int(p) for p in parts)
+            return m * 60 + s
+        if len(parts) == 1:
+            return int(parts[0])
+    except ValueError:
+        return None
+    return None
 
 
 def _fmt_duration(seconds: float, *, precise: bool = False) -> str:
@@ -511,6 +667,47 @@ def parse_ll2_launch(raw: dict) -> Launch:
     else:
         image_url = image or ""
 
+    # LL2 timeline (when present) — relative events around NET
+    timeline: list[TimelineEvent] = []
+    raw_tl = raw.get("timeline")
+    if isinstance(raw_tl, list):
+        for item in raw_tl:
+            if not isinstance(item, dict):
+                continue
+            # Common shapes: {type:{name}, relative_time} or {name, time}
+            rel = item.get("relative_time")
+            if rel is None:
+                rel = item.get("time")
+            try:
+                rel_i = int(rel) if rel is not None else None
+            except (TypeError, ValueError):
+                rel_i = parse_hms_to_seconds(str(rel)) if rel is not None else None
+            if rel_i is None:
+                continue
+            typ = item.get("type") or {}
+            desc = (
+                item.get("description")
+                or item.get("name")
+                or (typ.get("name") if isinstance(typ, dict) else "")
+                or ""
+            )
+            phase = "flight" if rel_i >= 0 else "countdown"
+            timeline.append(
+                TimelineEvent(
+                    relative_sec=rel_i,
+                    description=str(desc),
+                    phase=phase,
+                    source="ll2",
+                )
+            )
+
+    info_urls: list[str] = []
+    for u in raw.get("infoURLs") or raw.get("info_urls") or []:
+        if isinstance(u, str):
+            info_urls.append(u)
+        elif isinstance(u, dict) and u.get("url"):
+            info_urls.append(u["url"])
+
     return Launch(
         id=str(raw.get("id") or ""),
         name=raw.get("name") or "",
@@ -547,6 +744,8 @@ def parse_ll2_launch(raw: dict) -> Launch:
         programs=programs,
         mission_patches=patches,
         source="ll2",
+        timeline=timeline,
+        info_urls=info_urls,
     )
 
 

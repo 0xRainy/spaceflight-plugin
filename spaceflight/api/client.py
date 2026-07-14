@@ -148,6 +148,18 @@ def fetch_all(limit: int = config.DEFAULT_FETCH_LIMIT, include_weather: bool = T
         except Exception as exc:  # noqa: BLE001
             log.warning("Weather merge failed: %s", exc)
 
+    # SpaceX CMS: countdown / flight timelines + infographics (no AI)
+    providers = ["ll.thespacedevs.com", "rocketlaunch.live"]
+    try:
+        from .spacex import enrich_launches
+
+        n = enrich_launches(launches, max_missions=10)
+        if n:
+            providers.append("content.spacex.com")
+            log.info("SpaceX enriched %d launches", n)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("SpaceX enrich failed: %s", exc)
+
     # Sort by NET ascending (None last)
     def sort_key(L: Launch) -> tuple:
         if L.net is None:
@@ -160,7 +172,7 @@ def fetch_all(limit: int = config.DEFAULT_FETCH_LIMIT, include_weather: bool = T
         meta={
             "fetched_utc": datetime.now(timezone.utc).isoformat(),
             "limit": limit,
-            "providers": ["ll.thespacedevs.com", "rocketlaunch.live"],
+            "providers": providers,
         },
     )
     return launches
