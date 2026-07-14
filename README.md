@@ -72,7 +72,7 @@ Countdowns recompute every frame (~10 fps animations, 1 Hz second digits). Netwo
 
 When a mission has a timeline (SpaceX CMS or LL2), the daemon notifies for **each stage** as wall-clock passes it — e.g. prop load, Max-Q, MECO, hot-staging, landing burn — not just T-1h / T-15m. Poll speeds up to **15s** inside the T-2h…T+2h window.
 
-### Phone push (T-24h only) via ntfy
+### Phone push (T-24h / T-1h / T-10m) via ntfy
 
 No extra system packages — uses HTTPS to [ntfy.sh](https://ntfy.sh) (or your own server).
 
@@ -87,14 +87,13 @@ No extra system packages — uses HTTPS to [ntfy.sh](https://ntfy.sh) (or your o
 ntfy_topic = "your-long-random-topic-here"
 ntfy_server = "https://ntfy.sh"
 # ntfy_token = ""   # only if you use access control
-t24h_only = true
 ```
 
 Or: `export SPACEFLIGHT_NTFY_TOPIC=your-long-random-topic-here`
 
 5. Test: `spaceflight notify-test --phone`
 
-At **T-24h** the phone gets mission name, vehicle, location, local + UTC T-0, and a watch/info link (tappable). Stage spam stays on the desktop only.
+Phone gets **T-24h**, **T-1h**, and **T-10m** pushes with mission name, vehicle, location, local + UTC T-0, and a watch/info link (tappable). Stage spam stays on the desktop only.
 
 ### MISSION tab scrolling
 
@@ -123,7 +122,7 @@ Hover tooltip lists upcoming launches. Left-click opens the TUI.
 User service `spaceflight.service`:
 
 - Refresh network data ~every **5 minutes**
-- Poll countdowns every minute for notify thresholds: **T-24h, T-6h, T-1h, T-15m, T-5m**, plus **webcast live**
+- Poll countdowns every minute for notify thresholds: **T-24h, T-1h, T-10m**, plus **webcast live** and flight stages (desktop)
 
 ## Cache paths
 
