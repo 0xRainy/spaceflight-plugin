@@ -1,91 +1,80 @@
 # Spaceflight
 
-Terminal rocket launch tracker with a **btop-style TUI**, background notifications, and a **Waybar** hover module.
+Flashy terminal **mission control** for rocket launches — btop energy, live T-countdowns, ASCII flight paths, Waybar module, and desktop notifications.
 
-Data comes from public launch trackers (no AI, no account required):
+Data comes from public launch trackers (no AI, no account):
 
 | Source | What it provides |
 |--------|------------------|
-| [Launch Library 2](https://thespacedevs.com/llapi) (The Space Devs) | Schedule, NET windows, status, vehicle/booster stats, payload, pad, livestream URLs, schedule-change updates |
-| [Rocket Launch Live](https://www.rocketlaunch.live/api) (free next-5) | Weather summary for near-term launches |
+| [Launch Library 2](https://thespacedevs.com/llapi) | Schedule, NET, status, vehicle/booster, payload, pad, streams, updates |
+| [Rocket Launch Live](https://www.rocketlaunch.live/api) (free next-5) | Weather for near-term launches |
 
-Free LL2 rate limit is roughly **15 requests/hour**. Spaceflight caches aggressively and shares one cache across the TUI, daemon, and Waybar.
+Free LL2 rate limit is ~**15 requests/hour**. Spaceflight caches aggressively and only hits the network about **every 5 minutes**.
 
-## Requirements
+## Git (local)
 
-Already available on this system:
+This project is a **local git repo** so you don’t lose good versions:
 
-- Python 3 + `python-requests` + `python-rich`
-- `notify-send` (mako)
-- Waybar / systemd user session
-
-No extra packages required. Optional: `wl-copy` for clipboard (`c` in the TUI).
+```bash
+cd ~/projects/spaceflight
+git log --oneline
+git tag                 # v0.1.0 = first solid build, v0.2.0 = flashy UI
+git checkout v0.1.0     # time travel if needed
+```
 
 ## Quick start
 
 ```bash
-cd ~/projects/spaceflight
-./scripts/install.sh          # symlink CLI, enable daemon, seed cache
-spaceflight                   # open TUI
-spaceflight list              # text list
-spaceflight refresh           # force network pull
+spaceflight                 # mission-control TUI
+spaceflight list
+spaceflight refresh         # force network pull (rate-limited)
+spaceflight status
 ```
 
-## Commands
-
-| Command | Description |
-|---------|-------------|
-| `spaceflight` / `spaceflight tui` | Interactive btop-style monitor |
-| `spaceflight list [--json]` | Print upcoming launches |
-| `spaceflight show <query>` | Detail for one launch |
-| `spaceflight refresh` | Fetch from LL2 + weather |
-| `spaceflight daemon` | Foreground background worker |
-| `spaceflight daemon --once` | One refresh + notify pass |
-| `spaceflight waybar` | JSON line for Waybar |
-| `spaceflight notify-test` | Test desktop notification |
-| `spaceflight status` | Paths / daemon state |
-
-## TUI keybinds
-
-| Key | Action |
-|-----|--------|
-| `j` / `k` or arrows | Navigate list / scroll detail |
-| `Tab` | Focus list ↔ detail |
-| `[` / `]` or `1`–`5` | Detail tabs (Overview / Vehicle / Payload / Updates / Streams) |
-| `f` | Cycle filter (ALL · GO · HOLD · LIVE · SpX) |
-| `o` | Open primary livestream |
-| `i` | Open best external info link |
-| `c` | Copy stream URL (`wl-copy`) |
-| `r` | Force refresh |
-| `q` | Quit |
-
-## Notifications
-
-The user systemd service `spaceflight.service` polls once a minute, refreshes the cache about every 5+ minutes, and fires desktop notifications at:
-
-- **T-24h**, **T-6h**, **T-1h**, **T-15m**, **T-5m**
-- When a launch is marked **webcast live**
-
-Bodies include mission name, NET (local time), pad, and a livestream URL when known.
+Daemon (already enabled if you ran install):
 
 ```bash
 systemctl --user status spaceflight
-journalctl --user -u spaceflight -f
-# or app log:
-tail -f ~/.local/state/spaceflight/daemon.log
 ```
+
+## TUI — keys
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` or ↑/↓ | Move in launch queue **or** scroll detail |
+| `Tab` | Focus queue ↔ mission-control panel |
+| **`←` / `→` or `h` / `l`** | **Switch detail tabs** (when detail focused) |
+| **`t`** | Next detail tab (works anytime) |
+| **`1`–`6`** | Jump to tab |
+| `[` / `]` | Previous / next tab |
+| `f` | Cycle filter (ALL · GO · HOLD · LIVE · SpX) |
+| `o` | Open primary livestream |
+| `i` | Open best info link |
+| `c` | Copy stream URL (`wl-copy`) |
+| `r` | Force data refresh |
+| `Esc` / Backspace | Back to launch queue |
+| `q` | Quit |
+
+### Detail tabs
+
+1. **OVERVIEW** — big live countdown, rocket art, flames near T-0, progress bar, mission blurb  
+2. **VEHICLE** — specs, record, booster serials / landings  
+3. **PAYLOAD** — mission description & orbit  
+4. **PATH** — ASCII projected trajectory + toy telemetry (ascent sketch, not radar)  
+5. **NEWS** — schedule changes / updates from LL2 editors  
+6. **LIVE** — webcast links  
+
+Countdowns recompute every frame (~10 fps animations, 1 Hz second digits). Network auto-refresh every **5 minutes**; cache reread every 15s if the daemon updated it.
 
 ## Waybar
 
-Install adds `~/.config/waybar/scripts/spaceflight-waybar`. Wire it into `~/.config/waybar/config.jsonc`:
+Module runs **every 1 second** but only reads the local cache — **no API hammering**. Countdown text uses `T-HH:MM:SS` so it ticks live.
 
 ```jsonc
-"modules-center": [ "clock", "custom/spaceflight", ... ],
-
 "custom/spaceflight": {
   "return-type": "json",
   "exec": "~/.config/waybar/scripts/spaceflight-waybar",
-  "interval": 30,
+  "interval": 1,
   "tooltip": true,
   "on-click": "xdg-terminal-exec -e spaceflight",
   "on-click-right": "spaceflight refresh",
@@ -93,9 +82,14 @@ Install adds `~/.config/waybar/scripts/spaceflight-waybar`. Wire it into `~/.con
 }
 ```
 
-Tooltip lists the next launches with status, countdown, and stream markers. Left-click opens the TUI.
+Hover tooltip lists upcoming launches. Left-click opens the TUI.
 
-Restart: `omarchy restart waybar`
+## Notifications
+
+User service `spaceflight.service`:
+
+- Refresh network data ~every **5 minutes**
+- Poll countdowns every minute for notify thresholds: **T-24h, T-6h, T-1h, T-15m, T-5m**, plus **webcast live**
 
 ## Cache paths
 
@@ -110,22 +104,21 @@ Restart: `omarchy restart waybar`
 
 ```
 projects/spaceflight/
-├── spaceflight/          # Python package
-│   ├── api/              # LL2 + RocketLaunch.Live clients
-│   ├── tui/              # curses TUI
+├── spaceflight/
+│   ├── api/           # LL2 + RocketLaunch.Live
+│   ├── tui/
+│   │   ├── app.py     # main mission-control UI
+│   │   ├── art.py     # big digits, rockets, starfield
+│   │   └── flightpath.py  # ASCII trajectory
 │   ├── daemon.py
 │   ├── waybar.py
-│   ├── notify.py
-│   └── cli.py
+│   └── …
 ├── scripts/
-│   ├── spaceflight
-│   ├── spaceflight-waybar
-│   └── install.sh
 └── systemd/spaceflight.service
 ```
 
 ## Notes
 
-- LL2 “upcoming” can briefly include just-completed flights; the TUI shows status (Success / Failure) and countdown (`T+…`).
-- Livestream URLs often appear only near launch; Updates tab tracks NET slips and webcast posts as LL2 editors publish them.
-- Be kind to the free APIs — prefer the daemon’s schedule over hammering `refresh`.
+- Flight PATH tab is a **fun stylized sketch** (gravity-turn style), not Flight Club guidance.
+- Livestream URLs often appear only near launch; NEWS tab tracks NET slips as LL2 posts them.
+- Be kind to free APIs — prefer the 5‑minute cadence over spamming `refresh`.

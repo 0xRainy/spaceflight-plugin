@@ -255,20 +255,24 @@ class Launch:
             return None
         return sorted(self.streams, key=lambda s: s.priority)[0]
 
-    def countdown_label(self, now: datetime | None = None) -> str:
+    def countdown_label(self, now: datetime | None = None, *, precise: bool = False) -> str:
+        """
+        Human countdown string.
+        precise=True always includes seconds (for waybar 1Hz / live TUI footer).
+        """
         secs = self.seconds_to_net(now)
         if secs is None:
             return "NET TBD"
         if self.is_live_or_inflight() and secs <= 0:
-            return "LIFTOFF" if secs > -120 else f"T+{_fmt_duration(-secs)}"
+            return "LIFTOFF" if secs > -120 else f"T+{_fmt_duration(-secs, precise=precise)}"
         if secs < 0:
             abb = (self.status_abbrev or "").lower()
             if abb in ("success",):
                 return "SUCCESS"
             if "fail" in abb:
                 return "FAILURE"
-            return f"T+{_fmt_duration(-secs)}"
-        return f"T-{_fmt_duration(secs)}"
+            return f"T+{_fmt_duration(-secs, precise=precise)}"
+        return f"T-{_fmt_duration(secs, precise=precise)}"
 
     def short_name(self) -> str:
         # Prefer "Vehicle | Mission" split
@@ -364,11 +368,17 @@ class Launch:
         )
 
 
-def _fmt_duration(seconds: float) -> str:
+def _fmt_duration(seconds: float, *, precise: bool = False) -> str:
     s = int(abs(seconds))
     days, rem = divmod(s, 86400)
     hours, rem = divmod(rem, 3600)
     mins, secs = divmod(rem, 60)
+    if precise:
+        # Always tick at 1Hz: total hours if multi-day, else classic clock
+        if days > 0:
+            total_h = days * 24 + hours
+            return f"{total_h:02d}:{mins:02d}:{secs:02d}"
+        return f"{hours:02d}:{mins:02d}:{secs:02d}"
     if days > 0:
         return f"{days}d {hours:02d}h {mins:02d}m"
     if hours > 0:

@@ -74,7 +74,8 @@ def build_waybar_payload(launches: list[Launch] | None = None) -> dict:
         tooltip = "No upcoming launches in cache.\nRun: spaceflight refresh"
         cls = "unknown"
     else:
-        cd = featured.countdown_label(now)
+        # precise=True so the bar ticks every second (cache-only, no API hits)
+        cd = featured.countdown_label(now, precise=True)
         short = featured.short_name()
         # Keep waybar compact
         if len(short) > 22:
@@ -100,7 +101,7 @@ def build_waybar_payload(launches: list[Launch] | None = None) -> dict:
             if L.net:
                 net_s = L.net.astimezone().strftime("%m/%d %H:%M")
             lines.append(
-                f"{mark} {L.countdown_label(now):12}  {L.status_abbrev or L.status or '?':8}{live}"
+                f"{mark} {L.countdown_label(now, precise=True):12}  {L.status_abbrev or L.status or '?':8}{live}"
             )
             lines.append(f"  {L.vehicle_name()} │ {L.short_name()}{stream_hint}")
             lines.append(f"  {L.provider} · {L.location or L.pad}")
@@ -140,6 +141,12 @@ def build_waybar_payload(launches: list[Launch] | None = None) -> dict:
 
 
 def emit_waybar(refresh: bool = False) -> dict:
+    """
+    Build waybar JSON from cache (default).
+
+    Safe to call every second — network is only touched when refresh=True,
+    and even then rate-limited to ~5 minutes by refresh_if_needed.
+    """
     launches = None
     if refresh:
         try:
@@ -147,6 +154,17 @@ def emit_waybar(refresh: bool = False) -> dict:
         except Exception:
             launches = None
     payload = build_waybar_payload(launches)
+    # Don't thrash disk every second — only rewrite if text/tooltip class changed
+    try:
+        prev = load_waybar()
+        if (
+            prev.get("text") == payload.get("text")
+            and prev.get("class") == payload.get("class")
+            and prev.get("tooltip") == payload.get("tooltip")
+        ):
+            return payload
+    except Exception:
+        pass
     save_waybar(payload)
     return payload
 

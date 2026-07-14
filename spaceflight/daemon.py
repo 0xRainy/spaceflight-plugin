@@ -17,6 +17,8 @@ from .waybar import emit_waybar
 
 class Daemon:
     def __init__(self, poll_sec: float = config.DAEMON_POLL_SEC) -> None:
+        # poll_sec: how often we recompute countdowns/notifications (cheap).
+        # Network refresh is separately gated to MIN_FETCH_INTERVAL_SEC (5 min).
         self.poll_sec = poll_sec
         self._stop = False
 

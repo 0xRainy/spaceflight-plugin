@@ -1,15 +1,8 @@
 """
-Spaceflight TUI — btop-inspired multi-panel launch monitor.
+Spaceflight TUI — flashy mission-control terminal.
 
-Layout:
-  ┌─ header ──────────────────────────────────────────────────────────┐
-  │ SPACEFLIGHT  v0.1 │ clock │ data age │ filter                      │
-  ├─ launch list ─────────────┬─ detail ──────────────────────────────┤
-  │  list of upcoming          │  T- countdown / status / mission      │
-  │  launches                  │  vehicle · payload · streams · updates│
-  ├────────────────────────────┴──────────────────────────────────────┤
-  │ footer keybinds                                                   │
-  └───────────────────────────────────────────────────────────────────┘
+Live T-countdowns, animated rocket/starfield, ASCII flight path,
+and clear detail-tab navigation (←/→, h/l, t, 1-6).
 """
 
 from __future__ import annotations
@@ -19,15 +12,17 @@ import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
-from typing import Callable
 
 from .. import config
 from ..api.client import refresh_if_needed
 from ..cache import load_launches
 from ..models import Launch
 from ..notify import open_url
+from . import art
+from .flightpath import render_flightpath, telemetry_readout, vehicle_progress
+from .widgets import fill, panel_border, put
 
-# ── color pair IDs ──────────────────────────────────────────────
+# ── colors ──────────────────────────────────────────────────────
 C_DEFAULT = 1
 C_HEADER = 2
 C_BORDER = 3
@@ -45,12 +40,18 @@ C_COUNTDOWN = 14
 C_WARN = 15
 C_FOOTER = 16
 C_SECTION = 17
+C_STAR = 18
+C_FLAME = 19
+C_ROCKET = 20
+C_TAB_ON = 21
+C_TAB_OFF = 22
+C_BIG = 23
+C_MAGENTA = 24
 
 
 def _init_colors() -> None:
     curses.start_color()
     curses.use_default_colors()
-    # pair id, fg, bg  (-1 = default terminal bg)
     curses.init_pair(C_DEFAULT, curses.COLOR_WHITE, -1)
     curses.init_pair(C_HEADER, curses.COLOR_BLACK, curses.COLOR_CYAN)
     curses.init_pair(C_BORDER, curses.COLOR_CYAN, -1)
@@ -68,6 +69,13 @@ def _init_colors() -> None:
     curses.init_pair(C_WARN, curses.COLOR_YELLOW, -1)
     curses.init_pair(C_FOOTER, curses.COLOR_BLACK, curses.COLOR_BLUE)
     curses.init_pair(C_SECTION, curses.COLOR_CYAN, -1)
+    curses.init_pair(C_STAR, curses.COLOR_WHITE, -1)
+    curses.init_pair(C_FLAME, curses.COLOR_YELLOW, -1)
+    curses.init_pair(C_ROCKET, curses.COLOR_WHITE, -1)
+    curses.init_pair(C_TAB_ON, curses.COLOR_BLACK, curses.COLOR_GREEN)
+    curses.init_pair(C_TAB_OFF, curses.COLOR_CYAN, -1)
+    curses.init_pair(C_BIG, curses.COLOR_GREEN, -1)
+    curses.init_pair(C_MAGENTA, curses.COLOR_MAGENTA, -1)
 
 
 def status_color(L: Launch) -> int:
@@ -87,64 +95,17 @@ def status_color(L: Launch) -> int:
     return C_DEFAULT
 
 
-# ── drawing helpers ─────────────────────────────────────────────
-
-def clip(s: str, width: int) -> str:
-    if width <= 0:
-        return ""
-    if len(s) <= width:
-        return s
-    if width <= 1:
-        return s[:width]
-    return s[: width - 1] + "…"
-
-
-def fill(win, y: int, x: int, text: str, width: int, attr: int = 0) -> None:
-    try:
-        h, w = win.getmaxyx()
-        if y < 0 or y >= h or x >= w:
-            return
-        text = clip(text, min(width, w - x - 1))
-        win.addstr(y, x, text, attr)
-        # pad rest of field
-        pad = min(width, w - x - 1) - len(text)
-        if pad > 0:
-            win.addstr(y, x + len(text), " " * pad, attr)
-    except curses.error:
-        pass
-
-
-def box(win, attr: int = 0) -> None:
-    try:
-        win.attron(attr)
-        win.box()
-        win.attroff(attr)
-    except curses.error:
-        pass
-
-
-def hline(win, y: int, x: int, width: int, attr: int = 0) -> None:
-    try:
-        win.hline(y, x, curses.ACS_HLINE, max(0, width), attr)
-    except curses.error:
-        pass
-
-
-def title_bar(win, title: str, attr: int) -> None:
-    """Draw a box title like btop: ─ title ─"""
-    try:
-        _, w = win.getmaxyx()
-        t = f" {title} "
-        x = 2
-        fill(win, 0, x, t, len(t), attr | curses.A_BOLD)
-    except curses.error:
-        pass
-
-
-# ── main app ────────────────────────────────────────────────────
-
 class SpaceflightApp:
-    FILTERS = ("ALL", "GO", "HOLD", "LIVE", "SpX")  # SpX = SpaceX only
+    FILTERS = ("ALL", "GO", "HOLD", "LIVE", "SpX")
+    # Short labels shown in tab bar — use ←/→ or 1-6 to switch
+    TABS = (
+        ("1:OVER", "OVERVIEW"),
+        ("2:VEH", "VEHICLE"),
+        ("3:PAY", "PAYLOAD"),
+        ("4:PATH", "FLIGHT"),
+        ("5:NEWS", "UPDATES"),
+        ("6:LIVE", "STREAMS"),
+    )
 
     def __init__(self) -> None:
         self.launches: list[Launch] = []
@@ -154,14 +115,19 @@ class SpaceflightApp:
         self.list_offset = 0
         self.detail_scroll = 0
         self.filter_idx = 0
-        self.detail_tab = 0  # 0 overview 1 vehicle 2 payload 3 updates 4 streams
-        self.tabs = ("OVERVIEW", "VEHICLE", "PAYLOAD", "UPDATES", "STREAMS")
+        self.detail_tab = 0
         self.message = ""
         self.message_until = 0.0
         self.last_draw = 0.0
         self.need_refresh = True
         self.loading = False
         self.focus = "list"  # list | detail
+        self.tick = 0
+        self.starfield = art.Starfield(seed=7)
+        self.last_net_refresh = 0.0
+        self.last_cache_reload = 0.0
+        self.auto_refresh_sec = config.MIN_FETCH_INTERVAL_SEC  # 5 min
+        self.frame_ms = 100  # ~10 fps animation, countdown still live
 
     # ── data ────────────────────────────────────────────────
 
@@ -174,49 +140,59 @@ class SpaceflightApp:
             if meta.get("refresh_error"):
                 self.flash(f"Refresh error: {meta['refresh_error']}")
             elif meta.get("refreshed"):
-                self.flash(f"Fetched {len(launches)} launches")
+                self.flash(f"✦ Telemetry uplink OK — {len(launches)} launches")
             elif meta.get("skipped_rate_limit"):
-                self.flash("Rate limit: using cache (<60s old)")
+                self.flash("Rate guard: cache is fresh")
             self.apply_filter()
+            self.last_net_refresh = time.time()
         except Exception as exc:  # noqa: BLE001
-            # Fall back to cache
             self.launches, self.meta = load_launches()
             self.apply_filter()
-            self.flash(f"Error: {exc}")
+            self.flash(f"Uplink failed: {exc}")
         finally:
             self.loading = False
             self.need_refresh = True
+
+    def soft_reload_cache(self) -> None:
+        """Reread disk cache (daemon may have written). No network."""
+        cached, meta = load_launches()
+        if not cached:
+            return
+        prev_id = self.current().id if self.current() else None
+        self.launches = cached
+        self.meta = meta
+        self.apply_filter()
+        if prev_id:
+            for i, L in enumerate(self.filtered):
+                if L.id == prev_id:
+                    self.selected = i
+                    break
+        self.last_cache_reload = time.time()
 
     def apply_filter(self) -> None:
         now = datetime.now(timezone.utc)
         f = self.FILTERS[self.filter_idx]
         out: list[Launch] = []
         for L in self.launches:
-            # Drop long-finished flights from the live list
             if not L.is_upcoming(now):
                 abb = (L.status_abbrev or "").lower()
-                if abb in ("success", "failure", "partial failure") and f != "ALL":
-                    continue
                 if abb in ("success", "failure", "partial failure"):
-                    # ALL still hides launches older than 6h past NET
                     secs = L.seconds_to_net(now)
                     if secs is not None and secs < -6 * 3600:
                         continue
+                    if f != "ALL" and abb in ("success", "failure", "partial failure"):
+                        continue
             if f == "ALL":
                 out.append(L)
-            elif f == "GO":
-                if L.is_go() or L.is_live_or_inflight():
-                    out.append(L)
-            elif f == "HOLD":
-                if L.is_hold():
-                    out.append(L)
-            elif f == "LIVE":
-                if L.webcast_live or L.is_live_or_inflight():
-                    out.append(L)
-            elif f == "SpX":
-                if "spacex" in (L.provider or "").lower():
-                    out.append(L)
-        # Sort: still-counting-down first, then by NET
+            elif f == "GO" and (L.is_go() or L.is_live_or_inflight()):
+                out.append(L)
+            elif f == "HOLD" and L.is_hold():
+                out.append(L)
+            elif f == "LIVE" and (L.webcast_live or L.is_live_or_inflight()):
+                out.append(L)
+            elif f == "SpX" and "spacex" in (L.provider or "").lower():
+                out.append(L)
+
         def sk(L: Launch):
             secs = L.seconds_to_net(now)
             past = 1 if (secs is not None and secs < -120 and not L.is_live_or_inflight()) else 0
@@ -231,9 +207,7 @@ class SpaceflightApp:
         self.detail_scroll = 0
 
     def current(self) -> Launch | None:
-        if not self.filtered:
-            return None
-        if self.selected < 0 or self.selected >= len(self.filtered):
+        if not self.filtered or self.selected < 0 or self.selected >= len(self.filtered):
             return None
         return self.filtered[self.selected]
 
@@ -241,22 +215,27 @@ class SpaceflightApp:
         self.message = msg
         self.message_until = time.time() + secs
 
+    def cycle_tab(self, delta: int = 1) -> None:
+        self.detail_tab = (self.detail_tab + delta) % len(self.TABS)
+        self.detail_scroll = 0
+        short = self.TABS[self.detail_tab][0]
+        self.flash(f"Tab → {short}  ({self.detail_tab + 1}/{len(self.TABS)})", 1.5)
+
     def open_stream(self) -> None:
         L = self.current()
         if not L:
             return
         stream = L.primary_stream()
         if not stream:
-            self.flash("No livestream URL for this launch")
+            self.flash("No livestream URL yet")
             return
         open_url(stream.url)
-        self.flash(f"Opening: {stream.url[:60]}")
+        self.flash(f"▶ Opening stream…")
 
     def open_all_info(self) -> None:
         L = self.current()
         if not L:
             return
-        # Prefer flightclub, then first stream, then map
         for url in (
             L.flightclub_url,
             (L.primary_stream().url if L.primary_stream() else ""),
@@ -265,19 +244,19 @@ class SpaceflightApp:
         ):
             if url:
                 open_url(url)
-                self.flash(f"Opening: {url[:60]}")
+                self.flash("Opening link…")
                 return
-        self.flash("No external links available")
+        self.flash("No external links")
 
-    # ── layout geometry ─────────────────────────────────────
+    # ── layout ──────────────────────────────────────────────
 
     def geometry(self, stdscr) -> dict:
         h, w = stdscr.getmaxyx()
-        header_h = 1
-        footer_h = 1
-        body_h = max(3, h - header_h - footer_h)
-        list_w = max(24, min(42, w // 3))
-        detail_w = max(20, w - list_w)
+        header_h = 2
+        footer_h = 2
+        body_h = max(5, h - header_h - footer_h)
+        list_w = max(28, min(44, w // 3))
+        detail_w = max(24, w - list_w)
         return {
             "h": h,
             "w": w,
@@ -297,9 +276,9 @@ class SpaceflightApp:
     def draw(self, stdscr) -> None:
         g = self.geometry(stdscr)
         h, w = g["h"], g["w"]
-        if h < 10 or w < 40:
+        if h < 12 or w < 50:
             stdscr.erase()
-            fill(stdscr, 0, 0, "Terminal too small (min 40x10)", w, curses.color_pair(C_FAIL))
+            fill(stdscr, 0, 0, "Need a bigger terminal (≥50×12). Go fullscreen!", w, curses.color_pair(C_FAIL))
             stdscr.refresh()
             return
 
@@ -311,6 +290,7 @@ class SpaceflightApp:
         stdscr.refresh()
         self.last_draw = time.time()
         self.need_refresh = False
+        self.tick += 1
 
     def _draw_header(self, stdscr, g: dict) -> None:
         w = g["w"]
@@ -318,42 +298,53 @@ class SpaceflightApp:
         clock = now.strftime("%H:%M:%S")
         age = self.meta.get("age_sec")
         if age is None:
-            age_s = "no cache"
+            age_s = "—"
         elif age < 60:
             age_s = f"{int(age)}s"
         elif age < 3600:
             age_s = f"{int(age // 60)}m"
         else:
-            age_s = f"{int(age // 3600)}h"
-        filt = self.FILTERS[self.filter_idx]
-        n = len(self.filtered)
-        left = f" SPACEFLIGHT v{config.VERSION} "
-        mid = f" {clock} "
-        right = f" data:{age_s}  filter:{filt}  n:{n} "
-        if self.loading:
-            right = " loading… " + right
+            age_s = f"{age / 3600:.1f}h"
 
+        # Row 0: banner
         fill(stdscr, 0, 0, " " * w, w, curses.color_pair(C_HEADER) | curses.A_BOLD)
+        left = f" {art.banner_spaceflight(self.tick)}  v{config.VERSION} "
+        mid = f" {clock} "
+        spin = art.spinner(self.tick) if self.loading else "◆"
+        right = f" {spin} data {age_s}  auto {self.auto_refresh_sec // 60}m  [{self.FILTERS[self.filter_idx]}]  n={len(self.filtered)} "
         fill(stdscr, 0, 0, left, len(left), curses.color_pair(C_HEADER) | curses.A_BOLD)
         fill(stdscr, 0, max(0, (w - len(mid)) // 2), mid, len(mid), curses.color_pair(C_HEADER) | curses.A_BOLD)
         fill(stdscr, 0, max(0, w - len(right) - 1), right, len(right), curses.color_pair(C_HEADER) | curses.A_BOLD)
 
+        # Row 1: starfield strip + mission ticker
+        fill(stdscr, 1, 0, " " * w, w, curses.color_pair(C_DEFAULT))
+        self.starfield.resize(w, 1)
+        for _, x, ch in self.starfield.cells(self.tick):
+            put(stdscr, 1, x, ch, curses.color_pair(C_STAR) | curses.A_DIM)
+
+        L = self.current()
+        if L:
+            cd = L.countdown_label(datetime.now(timezone.utc), precise=True)
+            ticker = f"  {art.pulse_prefix(self.tick, L.webcast_live)} {L.provider} · {L.short_name()} · {cd} · {L.location}  "
+            # scroll ticker
+            if len(ticker) > w:
+                off = (self.tick // 2) % max(1, len(ticker) - w + 4)
+                ticker = ticker[off : off + w]
+            put(stdscr, 1, 0, ticker[:w], curses.color_pair(status_color(L)) | curses.A_BOLD)
+
     def _draw_list(self, stdscr, g: dict) -> None:
-        y0 = g["body_y"]
-        x0 = g["list_x"]
-        lh = g["body_h"]
-        lw = g["list_w"]
-
-        # Border using ACS on main screen
-        attr = curses.color_pair(C_BORDER)
-        self._panel_border(stdscr, y0, x0, lh, lw, "LAUNCHES", attr, focused=self.focus == "list")
-
-        inner_h = lh - 2
-        inner_w = lw - 2
-        if inner_h < 1 or inner_w < 5:
+        y0, x0 = g["body_y"], g["list_x"]
+        lh, lw = g["body_h"], g["list_w"]
+        panel_border(
+            stdscr, y0, x0, lh, lw, "LAUNCH QUEUE",
+            curses.color_pair(C_BORDER),
+            focused=self.focus == "list",
+            subtitle="j/k",
+        )
+        inner_h, inner_w = lh - 2, lw - 2
+        if inner_h < 1 or inner_w < 8:
             return
 
-        # Ensure selection visible
         if self.selected < self.list_offset:
             self.list_offset = self.selected
         if self.selected >= self.list_offset + inner_h:
@@ -361,190 +352,261 @@ class SpaceflightApp:
 
         now = datetime.now(timezone.utc)
         if not self.filtered:
-            fill(stdscr, y0 + 1, x0 + 1, "No launches", inner_w, curses.color_pair(C_DIM))
-            fill(stdscr, y0 + 2, x0 + 1, "Press r to refresh", inner_w, curses.color_pair(C_DIM))
+            fill(stdscr, y0 + 1, x0 + 1, "No launches — press r", inner_w, curses.color_pair(C_DIM))
             return
 
         for i in range(inner_h):
             idx = self.list_offset + i
             row = y0 + 1 + i
             if idx >= len(self.filtered):
-                fill(stdscr, row, x0 + 1, " " * inner_w, inner_w, curses.color_pair(C_DEFAULT))
+                fill(stdscr, row, x0 + 1, " " * inner_w, inner_w, 0)
                 continue
             L = self.filtered[idx]
             selected = idx == self.selected
             sc = status_color(L)
-            cd = L.countdown_label(now)
-            abb = (L.status_abbrev or "?")[:6]
+            cd = L.countdown_label(now, precise=True)
+            abb = (L.status_abbrev or "?")[:5]
             name = L.short_name()
-            # line1: countdown + status
-            # For narrow list: compact single/two-line style
+            live = "●" if L.webcast_live else ("▲" if L.is_go() else "·")
+
             if selected:
                 base = curses.color_pair(C_SELECTED) | curses.A_BOLD
                 fill(stdscr, row, x0 + 1, " " * inner_w, inner_w, base)
-                live = "●" if L.webcast_live else " "
-                text = f"{live}{cd:11} {abb:5} {name}"
+                text = f"{live}{cd:12} {abb:5} {name}"
                 fill(stdscr, row, x0 + 1, text, inner_w, base)
             else:
-                fill(stdscr, row, x0 + 1, " " * inner_w, inner_w, curses.color_pair(C_DEFAULT))
-                live = "●" if L.webcast_live else " "
-                col = curses.color_pair(sc)
-                fill(stdscr, row, x0 + 1, f"{live}{cd:11}", 12, col | curses.A_BOLD)
-                fill(stdscr, row, x0 + 1 + 12, f" {abb:5}", 6, col)
-                fill(stdscr, row, x0 + 1 + 18, f" {name}", max(0, inner_w - 18), curses.color_pair(C_DEFAULT))
+                fill(stdscr, row, x0 + 1, " " * inner_w, inner_w, 0)
+                fill(stdscr, row, x0 + 1, f"{live}{cd:12}", 13, curses.color_pair(sc) | curses.A_BOLD)
+                fill(stdscr, row, x0 + 14, f"{abb:5}", 5, curses.color_pair(sc))
+                fill(stdscr, row, x0 + 20, f" {name}", max(0, inner_w - 19), curses.color_pair(C_DEFAULT))
 
     def _draw_detail(self, stdscr, g: dict) -> None:
-        y0 = g["body_y"]
-        x0 = g["detail_x"]
-        dh = g["body_h"]
-        dw = g["detail_w"]
-        attr = curses.color_pair(C_BORDER)
+        y0, x0 = g["body_y"], g["detail_x"]
+        dh, dw = g["body_h"], g["detail_w"]
         L = self.current()
-        title = "DETAIL"
+        title = "MISSION CONTROL"
         if L:
-            title = clip(L.name, max(8, dw - 8))
-        self._panel_border(stdscr, y0, x0, dh, dw, title, attr, focused=self.focus == "detail")
-
-        inner_h = dh - 2
-        inner_w = dw - 2
-        ix = x0 + 1
-        iy = y0 + 1
-        if inner_h < 1 or inner_w < 10:
+            title = L.short_name()[: max(8, dw - 20)]
+        panel_border(
+            stdscr, y0, x0, dh, dw, title,
+            curses.color_pair(C_BORDER),
+            focused=self.focus == "detail",
+            subtitle="←/→ tabs",
+        )
+        inner_h, inner_w = dh - 2, dw - 2
+        ix, iy = x0 + 1, y0 + 1
+        if inner_h < 2 or inner_w < 12:
             return
-
         if not L:
-            fill(stdscr, iy, ix, "Select a launch", inner_w, curses.color_pair(C_DIM))
+            fill(stdscr, iy, ix, "Select a launch from the queue", inner_w, curses.color_pair(C_DIM))
             return
 
-        # Tab bar
-        tab_parts = []
-        for i, t in enumerate(self.tabs):
+        # Tab bar — HIGHLY visible
+        tab_x = ix
+        for i, (short, _long) in enumerate(self.TABS):
+            label = f" {short} "
             if i == self.detail_tab:
-                tab_parts.append(f"[{t}]")
+                attr = curses.color_pair(C_TAB_ON) | curses.A_BOLD
             else:
-                tab_parts.append(f" {t} ")
-        tab_line = " ".join(tab_parts)
-        fill(stdscr, iy, ix, tab_line, inner_w, curses.color_pair(C_SECTION) | curses.A_BOLD)
-        hline(stdscr, iy + 1, ix, inner_w, curses.color_pair(C_BORDER))
+                attr = curses.color_pair(C_TAB_OFF)
+            fill(stdscr, iy, tab_x, label, len(label), attr)
+            tab_x += len(label) + 1
+            if tab_x >= ix + inner_w:
+                break
+        # hint on same row if room
+        hint = "  ←/→ or 1-6 or t"
+        if tab_x + len(hint) < ix + inner_w:
+            put(stdscr, iy, tab_x, hint, curses.color_pair(C_DIM) | curses.A_DIM)
 
-        # Content lines
-        lines = self._detail_lines(L, inner_w)
-        # scroll
-        max_scroll = max(0, len(lines) - (inner_h - 2))
-        self.detail_scroll = max(0, min(self.detail_scroll, max_scroll))
-        visible = lines[self.detail_scroll : self.detail_scroll + (inner_h - 2)]
+        # Content
+        content_top = iy + 1
+        content_h = inner_h - 1
+        tab_id = self.TABS[self.detail_tab][1]
 
-        for i, (text, col, bold) in enumerate(visible):
-            a = curses.color_pair(col)
-            if bold:
-                a |= curses.A_BOLD
-            fill(stdscr, iy + 2 + i, ix, text, inner_w, a)
+        if tab_id == "OVERVIEW":
+            self._draw_overview(stdscr, content_top, ix, content_h, inner_w, L)
+        elif tab_id == "VEHICLE":
+            self._draw_scroll_lines(stdscr, content_top, ix, content_h, inner_w, self._lines_vehicle(L, inner_w))
+        elif tab_id == "PAYLOAD":
+            self._draw_scroll_lines(stdscr, content_top, ix, content_h, inner_w, self._lines_payload(L, inner_w))
+        elif tab_id == "FLIGHT":
+            self._draw_flight(stdscr, content_top, ix, content_h, inner_w, L)
+        elif tab_id == "UPDATES":
+            self._draw_scroll_lines(stdscr, content_top, ix, content_h, inner_w, self._lines_updates(L, inner_w))
+        else:
+            self._draw_scroll_lines(stdscr, content_top, ix, content_h, inner_w, self._lines_streams(L, inner_w))
 
-        if max_scroll > 0:
-            # scroll indicator
-            pct = int(self.detail_scroll / max_scroll * 100) if max_scroll else 0
-            fill(
-                stdscr,
-                y0 + dh - 2,
-                x0 + dw - 8,
-                f" {pct:3d}%",
-                6,
-                curses.color_pair(C_DIM),
-            )
-
-    def _detail_lines(self, L: Launch, width: int) -> list[tuple[str, int, bool]]:
+    def _draw_overview(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> None:
         now = datetime.now(timezone.utc)
-        tab = self.detail_tab
-        if tab == 0:
-            return self._lines_overview(L, now, width)
-        if tab == 1:
-            return self._lines_vehicle(L, width)
-        if tab == 2:
-            return self._lines_payload(L, width)
-        if tab == 3:
-            return self._lines_updates(L, width)
-        return self._lines_streams(L, width)
-
-    def _lines_overview(self, L: Launch, now: datetime, width: int) -> list[tuple[str, int, bool]]:
-        lines: list[tuple[str, int, bool]] = []
-        cd = L.countdown_label(now)
+        secs = L.seconds_to_net(now)
         sc = status_color(L)
 
-        lines.append((cd, C_COUNTDOWN if not L.webcast_live else C_LIVE, True))
-        lines.append((f"Status  {L.status_abbrev or L.status}", sc, True))
-        if L.status_description:
-            lines.extend(self._wrap(L.status_description, width, C_DIM, False))
-        lines.append(("", C_DEFAULT, False))
+        # Big countdown
+        big_str = art.compact_countdown_parts(secs, L.status_abbrev or L.status)
+        # Fit width
+        while True:
+            rows = art.render_big(big_str)
+            if not rows or len(rows[0]) <= w - 14 or len(big_str) <= 4:
+                break
+            # shorten
+            if "d " in big_str:
+                big_str = big_str.split("d ")[0] + "d"
+            else:
+                big_str = big_str[: max(4, len(big_str) - 1)]
 
+        big_col = C_LIVE if (L.webcast_live or (secs is not None and -120 < secs < 0)) else C_BIG
+        if L.is_hold():
+            big_col = C_HOLD
+        if secs is not None and 0 < secs < 300:
+            big_col = C_WARN if self.tick % 2 == 0 else C_LIVE
+
+        rocket = art.rocket_for(L.vehicle.full_name or L.name)
+        flame = art.flame_frame(self.tick) if (secs is not None and secs < 60) else []
+
+        # layout: rocket left, big digits center/right
+        rk_w = max(len(r) for r in rocket) if rocket else 0
+        col_r = x
+        col_big = x + rk_w + 2
+
+        for i, line in enumerate(rocket):
+            if i >= h - 1:
+                break
+            put(stdscr, y + i, col_r, line, curses.color_pair(C_ROCKET) | curses.A_BOLD)
+        if flame and len(rocket) < h - 1:
+            for i, line in enumerate(flame):
+                put(stdscr, y + len(rocket) + i, col_r, line, curses.color_pair(C_FLAME) | curses.A_BOLD)
+
+        for i, line in enumerate(rows):
+            if i >= h:
+                break
+            put(stdscr, y + i, col_big, line[: max(0, w - rk_w - 2)], curses.color_pair(big_col) | curses.A_BOLD)
+
+        row = y + max(len(rows), len(rocket) + len(flame)) + 1
+        if row >= y + h:
+            return
+
+        # Status line
+        fill(stdscr, row, x, f"STATUS  {L.status_abbrev or L.status}  ·  {L.status}", w, curses.color_pair(sc) | curses.A_BOLD)
+        row += 1
+
+        # Progress to launch (for next 7 days window)
+        if secs is not None and secs > 0:
+            window = 7 * 86400
+            frac = max(0.0, 1.0 - secs / window)
+            bar_w = max(10, w - 18)
+            bar = art.progress_bar(frac, bar_w)
+            fill(stdscr, row, x, f"TO NET  [{bar}]", w, curses.color_pair(C_ACCENT))
+            row += 1
+        elif secs is not None and secs <= 0:
+            frac = vehicle_progress(L, now)
+            bar = art.progress_bar(frac, max(10, w - 18), fill="▓", empty="░")
+            fill(stdscr, row, x, f"FLIGHT  [{bar}]", w, curses.color_pair(C_LIVE) | curses.A_BOLD)
+            row += 1
+
+        if row >= y + h:
+            return
+
+        # Meta block
+        lines = self._lines_overview_meta(L, now, w)
+        for text, col, bold in lines:
+            if row >= y + h:
+                break
+            a = curses.color_pair(col) | (curses.A_BOLD if bold else 0)
+            fill(stdscr, row, x, text, w, a)
+            row += 1
+
+    def _lines_overview_meta(self, L: Launch, now: datetime, width: int) -> list[tuple[str, int, bool]]:
+        lines: list[tuple[str, int, bool]] = []
         if L.net:
             local = L.net.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
             utc = L.net.strftime("%Y-%m-%d %H:%M:%S UTC")
             lines.append((f"NET     {local}", C_ACCENT, False))
             lines.append((f"        {utc}", C_DIM, False))
             if L.net_precision:
-                lines.append((f"Prec.   {L.net_precision}", C_DIM, False))
+                lines.append((f"PREC    {L.net_precision}", C_DIM, False))
         if L.window_start or L.window_end:
             ws = L.window_start.astimezone().strftime("%H:%M") if L.window_start else "?"
             we = L.window_end.astimezone().strftime("%H:%M %Z") if L.window_end else "?"
-            lines.append((f"Window  {ws} → {we}", C_DEFAULT, False))
-
+            lines.append((f"WINDOW  {ws} → {we}", C_DEFAULT, False))
         if L.probability is not None:
-            lines.append((f"Wx Go   {L.probability}%", C_WARN if L.probability < 70 else C_GO, True))
+            lines.append((f"WX GO   {L.probability}%", C_WARN if L.probability < 70 else C_GO, True))
         if L.hold_reason:
-            lines.extend(self._wrap(f"Hold    {L.hold_reason}", width, C_HOLD, False))
-        if L.weather_concerns:
-            lines.extend(self._wrap(f"Wx risk {L.weather_concerns}", width, C_WARN, False))
+            lines.extend(self._wrap(f"HOLD    {L.hold_reason}", width, C_HOLD, False))
         if L.weather and (L.weather.condition or L.weather.summary):
             w = L.weather
-            lines.append(
-                (f"Weather {w.condition}  {w.temp_f}°F  wind {w.wind_mph} mph", C_DEFAULT, False)
-            )
-            if w.summary:
-                for part in w.summary.strip().split("\n"):
-                    lines.append((f"        {part.strip()}", C_DIM, False))
-
+            lines.append((f"WEATHER {w.condition} {w.temp_f}°F wind {w.wind_mph}mph", C_DEFAULT, False))
         lines.append(("", C_DEFAULT, False))
-        lines.append(("── MISSION ──", C_SECTION, True))
-        lines.append((f"Name    {L.payload.name or L.short_name()}", C_DEFAULT, True))
-        lines.append((f"Type    {L.payload.type or '—'}", C_DEFAULT, False))
-        lines.append((f"Orbit   {L.payload.orbit or '—'} ({L.payload.orbit_abbrev or '?'})", C_DEFAULT, False))
-        if L.programs:
-            lines.append((f"Program {', '.join(L.programs)}", C_DEFAULT, False))
+        lines.append((f"MISSION {L.payload.name or L.short_name()}", C_SECTION, True))
+        lines.append((f"        {L.payload.type or '—'} → {L.payload.orbit or '—'} ({L.payload.orbit_abbrev or '?'})", C_DEFAULT, False))
+        lines.append((f"PAD     {L.pad} · {L.location}", C_DEFAULT, False))
+        lines.append((f"PROVIDER {L.provider} ({L.provider_type}) {L.provider_country}", C_DEFAULT, False))
         if L.payload.description:
             lines.append(("", C_DEFAULT, False))
             lines.extend(self._wrap(L.payload.description, width, C_DIM, False))
-
-        lines.append(("", C_DEFAULT, False))
-        lines.append(("── SITE ──", C_SECTION, True))
-        lines.append((f"Pad     {L.pad}", C_DEFAULT, False))
-        lines.append((f"Loc     {L.location}", C_DEFAULT, False))
-        if L.latitude and L.longitude:
-            lines.append((f"Coords  {L.latitude}, {L.longitude}", C_DIM, False))
-
-        lines.append(("", C_DEFAULT, False))
-        lines.append(("── PROVIDER ──", C_SECTION, True))
-        lines.append((f"{L.provider}  ({L.provider_type})  {L.provider_country}", C_DEFAULT, True))
-        if L.provider_launches is not None:
-            ok = L.provider_success if L.provider_success is not None else "?"
-            lines.append((f"Launches {L.provider_launches}  success {ok}", C_DIM, False))
-
         stream = L.primary_stream()
         if stream:
             lines.append(("", C_DEFAULT, False))
-            lines.append(("── WATCH ──", C_SECTION, True))
-            lines.append((f"{stream.title}", C_LIVE if L.webcast_live else C_GO, True))
+            lines.append((f"▶ WATCH  {stream.title}", C_LIVE if L.webcast_live else C_GO, True))
             lines.extend(self._wrap(stream.url, width, C_ACCENT, False))
-            lines.append(("Press o to open livestream", C_DIM, False))
-
+            lines.append(("        press o to open", C_DIM, False))
         if L.updates:
-            lines.append(("", C_DEFAULT, False))
-            lines.append(("── LATEST UPDATE ──", C_SECTION, True))
             u = L.updates[0]
             when = u.created_on.astimezone().strftime("%m/%d %H:%M") if u.created_on else ""
-            lines.append((f"{when}  @{u.created_by}", C_DIM, False))
+            lines.append(("", C_DEFAULT, False))
+            lines.append((f"LATEST  {when} @{u.created_by}", C_MAGENTA, True))
             lines.extend(self._wrap(u.comment, width, C_DEFAULT, False))
-
         return lines
+
+    def _draw_flight(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> None:
+        now = datetime.now(timezone.utc)
+        # Split: plot on left/top, telemetry bottom or right
+        plot_h = max(8, h - 8)
+        plot_lines = render_flightpath(L, width=w, height=plot_h, tick=self.tick, now=now)
+        for i, line in enumerate(plot_lines):
+            if i >= h:
+                return
+            # color path-ish
+            attr = curses.color_pair(C_ACCENT)
+            if "▲" in line or "◆" in line:
+                attr = curses.color_pair(C_GO) | curses.A_BOLD
+            if i == 0:
+                attr = curses.color_pair(C_SECTION) | curses.A_BOLD
+            fill(stdscr, y + i, x, line, w, attr)
+
+        row = y + len(plot_lines)
+        if row >= y + h:
+            return
+        fill(stdscr, row, x, "─" * w, w, curses.color_pair(C_BORDER))
+        row += 1
+        for line in telemetry_readout(L, now, self.tick):
+            if row >= y + h:
+                break
+            col = C_LIVE if "ASCENT" in line or "LIFTOFF" in line else C_DEFAULT
+            if line.startswith("PHASE"):
+                col = C_TITLE
+            fill(stdscr, row, x, line, w, curses.color_pair(col) | curses.A_BOLD)
+            row += 1
+
+    def _draw_scroll_lines(
+        self,
+        stdscr,
+        y: int,
+        x: int,
+        h: int,
+        w: int,
+        lines: list[tuple[str, int, bool]],
+    ) -> None:
+        max_scroll = max(0, len(lines) - h)
+        self.detail_scroll = max(0, min(self.detail_scroll, max_scroll))
+        visible = lines[self.detail_scroll : self.detail_scroll + h]
+        for i, (text, col, bold) in enumerate(visible):
+            a = curses.color_pair(col) | (curses.A_BOLD if bold else 0)
+            fill(stdscr, y + i, x, text, w, a)
+        if max_scroll > 0:
+            pct = int(self.detail_scroll / max_scroll * 100)
+            put(stdscr, y + h - 1, x + max(0, w - 6), f"{pct:3d}%", curses.color_pair(C_DIM))
+
+    # ── content builders ────────────────────────────────────
 
     def _lines_vehicle(self, L: Launch, width: int) -> list[tuple[str, int, bool]]:
         v = L.vehicle
@@ -561,10 +623,7 @@ class SpaceflightApp:
             if val is None or val == "":
                 return
             if isinstance(val, float):
-                if val >= 1000:
-                    s = f"{val:,.0f}"
-                else:
-                    s = f"{val:g}"
+                s = f"{val:,.0f}" if val >= 1000 else f"{val:g}"
             else:
                 s = str(val)
             lines.append((f"{label:<12} {s}{unit}", C_DEFAULT, False))
@@ -577,50 +636,35 @@ class SpaceflightApp:
         row("GTO", v.gto_capacity_kg, " kg")
         if v.launch_cost_usd:
             row("Cost", f"${v.launch_cost_usd:,.0f}")
-
         lines.append(("", C_DEFAULT, False))
         lines.append(("── RECORD ──", C_SECTION, True))
         row("Flights", v.total_launches)
         row("Success", v.successful_launches)
         row("Failed", v.failed_launches)
         row("Streak", v.consecutive_success)
-
         if v.boosters:
             lines.append(("", C_DEFAULT, False))
             lines.append(("── BOOSTERS ──", C_SECTION, True))
             for b in v.boosters:
                 lines.append((f"Serial  {b.serial or '—'}", C_GO, True))
                 if b.flights is not None:
-                    reused = "reused" if b.reused else "new"
-                    lines.append((f"Flight  #{b.flights}  ({reused})", C_DEFAULT, False))
+                    lines.append((f"Flight  #{b.flights}  ({'reused' if b.reused else 'new'})", C_DEFAULT, False))
                 if b.successful_landings is not None:
-                    lines.append(
-                        (
-                            f"Landings {b.successful_landings}/{b.attempted_landings or '?'}",
-                            C_DEFAULT,
-                            False,
-                        )
-                    )
+                    lines.append((f"Landings {b.successful_landings}/{b.attempted_landings or '?'}", C_DEFAULT, False))
                 if b.landing_attempt:
                     ok = "OK" if b.landing_success else ("?" if b.landing_success is None else "FAIL")
-                    lines.append(
-                        (f"Landing {ok}  {b.landing_type} @ {b.landing_location}", C_DEFAULT, False)
-                    )
+                    lines.append((f"Landing {ok}  {b.landing_type} @ {b.landing_location}", C_DEFAULT, False))
                     if b.landing_description:
                         lines.extend(self._wrap(b.landing_description, width, C_DIM, False))
                 if b.turnaround_days is not None:
                     lines.append((f"Turnaround {b.turnaround_days} days", C_DIM, False))
-                if b.previous_flight:
-                    lines.extend(self._wrap(f"Prev  {b.previous_flight}", width, C_DIM, False))
                 lines.append(("", C_DEFAULT, False))
-
         if v.description:
             lines.append(("── ABOUT ──", C_SECTION, True))
             lines.extend(self._wrap(v.description, width, C_DIM, False))
         if v.info_url:
             lines.append(("", C_DEFAULT, False))
             lines.extend(self._wrap(v.info_url, width, C_ACCENT, False))
-
         return lines
 
     def _lines_payload(self, L: Launch, width: int) -> list[tuple[str, int, bool]]:
@@ -645,14 +689,12 @@ class SpaceflightApp:
         lines: list[tuple[str, int, bool]] = []
         if not L.updates:
             lines.append(("No schedule/news updates yet.", C_DIM, False))
-            lines.append(("Updates appear as NET shifts, holds, and webcasts are posted.", C_DIM, False))
+            lines.append(("NET slips, holds, and webcast posts show up here.", C_DIM, False))
             return lines
         lines.append((f"{len(L.updates)} update(s)  (newest first)", C_SECTION, True))
         lines.append(("", C_DEFAULT, False))
         for u in L.updates:
-            when = ""
-            if u.created_on:
-                when = u.created_on.astimezone().strftime("%Y-%m-%d %H:%M")
+            when = u.created_on.astimezone().strftime("%Y-%m-%d %H:%M") if u.created_on else ""
             lines.append((f"● {when}  @{u.created_by}", C_ACCENT, True))
             lines.extend(self._wrap(u.comment, width, C_DEFAULT, False))
             if u.info_url:
@@ -663,11 +705,12 @@ class SpaceflightApp:
     def _lines_streams(self, L: Launch, width: int) -> list[tuple[str, int, bool]]:
         lines: list[tuple[str, int, bool]] = []
         if L.webcast_live:
-            lines.append(("● WEBCAST LIVE", C_LIVE, True))
+            pulse = "●" if self.tick % 2 == 0 else "○"
+            lines.append((f"{pulse} WEBCAST LIVE", C_LIVE, True))
             lines.append(("", C_DEFAULT, False))
         if not L.streams:
             lines.append(("No livestream links listed yet.", C_DIM, False))
-            lines.append(("Official streams usually appear closer to T-0.", C_DIM, False))
+            lines.append(("Official streams usually appear near T-0.", C_DIM, False))
             if L.flightclub_url:
                 lines.append(("", C_DEFAULT, False))
                 lines.append(("Flight Club trajectory:", C_SECTION, True))
@@ -707,7 +750,6 @@ class SpaceflightApp:
                 else:
                     if cur:
                         out.append((cur, col, bold))
-                    # hard-break long tokens
                     while len(word) > width:
                         out.append((word[:width], col, bold))
                         word = word[width:]
@@ -716,59 +758,37 @@ class SpaceflightApp:
                 out.append((cur, col, bold))
         return out
 
-    def _panel_border(
-        self,
-        stdscr,
-        y: int,
-        x: int,
-        h: int,
-        w: int,
-        title: str,
-        attr: int,
-        focused: bool = False,
-    ) -> None:
-        if h < 2 or w < 2:
-            return
-        a = attr | (curses.A_BOLD if focused else 0)
-        try:
-            # corners
-            stdscr.addch(y, x, curses.ACS_ULCORNER, a)
-            stdscr.addch(y, x + w - 1, curses.ACS_URCORNER, a)
-            stdscr.addch(y + h - 1, x, curses.ACS_LLCORNER, a)
-            stdscr.addch(y + h - 1, x + w - 1, curses.ACS_LRCORNER, a)
-            # edges
-            if w > 2:
-                stdscr.hline(y, x + 1, curses.ACS_HLINE, w - 2, a)
-                stdscr.hline(y + h - 1, x + 1, curses.ACS_HLINE, w - 2, a)
-            if h > 2:
-                stdscr.vline(y + 1, x, curses.ACS_VLINE, h - 2, a)
-                stdscr.vline(y + 1, x + w - 1, curses.ACS_VLINE, h - 2, a)
-            # title
-            t = f" {title} "
-            if len(t) < w - 2:
-                fill(stdscr, y, x + 2, t, len(t), a | curses.A_BOLD)
-        except curses.error:
-            pass
-
     def _draw_footer(self, stdscr, g: dict) -> None:
-        y = g["footer_y"]
-        w = g["w"]
+        y, w = g["footer_y"], g["w"]
+        # two rows
         if time.time() < self.message_until and self.message:
-            msg = f" {self.message} "
             fill(stdscr, y, 0, " " * w, w, curses.color_pair(C_WARN) | curses.A_BOLD)
-            fill(stdscr, y, 0, msg, w, curses.color_pair(C_WARN) | curses.A_BOLD)
-            return
-        keys = (
-            "j/k:nav  tab:focus  [/]:tabs  f:filter  o:stream  i:links  "
-            "r:refresh  c:copy-url  q:quit"
-        )
-        fill(stdscr, y, 0, " " * w, w, curses.color_pair(C_FOOTER))
-        fill(stdscr, y, 1, keys, w - 2, curses.color_pair(C_FOOTER))
+            fill(stdscr, y, 0, f" ✦ {self.message}", w, curses.color_pair(C_WARN) | curses.A_BOLD)
+        else:
+            keys1 = (
+                "j/k list  Tab panel  ←/→ or t or 1-6 DETAIL TABS  "
+                "f filter  o stream  r refresh  q quit"
+            )
+            fill(stdscr, y, 0, " " * w, w, curses.color_pair(C_FOOTER))
+            fill(stdscr, y, 1, keys1, w - 2, curses.color_pair(C_FOOTER))
+
+        # second footer row: live countdown strip for selected
+        L = self.current()
+        now = datetime.now(timezone.utc)
+        if L:
+            cd = L.countdown_label(now, precise=True)
+            stream = "📺" if L.primary_stream() else ""
+            live = " 🔴LIVE" if L.webcast_live else ""
+            line = f" {cd} │ {L.status_abbrev or L.status} │ {L.vehicle_name()} │ {L.short_name()} {stream}{live}"
+            attr = curses.color_pair(status_color(L)) | curses.A_BOLD
+            fill(stdscr, y + 1, 0, " " * w, w, curses.color_pair(C_DEFAULT))
+            fill(stdscr, y + 1, 0, line, w, attr)
+        else:
+            fill(stdscr, y + 1, 0, " " * w, w, curses.color_pair(C_DIM))
 
     # ── input ───────────────────────────────────────────────
 
     def handle_key(self, key: int) -> bool:
-        """Return False to quit."""
         if key in (ord("q"), ord("Q")):
             return False
 
@@ -782,46 +802,57 @@ class SpaceflightApp:
             self.flash(f"Filter: {self.FILTERS[self.filter_idx]}")
             return True
 
+        # Focus panels
         if key == 9:  # Tab
             self.focus = "detail" if self.focus == "list" else "list"
+            self.flash(f"Focus: {self.focus.upper()} panel", 1.2)
+            return True
+        if key == 27:  # Esc → list
+            self.focus = "list"
+            return True
+
+        # Detail tabs — ALWAYS available (this was the bug: hard to discover)
+        # t / T cycle, numbers jump, [ ] also, and when detail-focused: h/l and ←/→
+        if key in (ord("t"), ord("T"), ord("]"), ord(".")):
+            self.cycle_tab(+1)
+            return True
+        if key in (ord("["), ord(",")):
+            self.cycle_tab(-1)
+            return True
+        # Number keys 1-6 (and numpad if available)
+        if ord("1") <= key <= ord("6"):
+            self.detail_tab = key - ord("1")
+            self.detail_scroll = 0
+            self.flash(f"Tab → {self.TABS[self.detail_tab][0]}", 1.2)
+            return True
+        if key in (
+            curses.KEY_F1, curses.KEY_F2, curses.KEY_F3,
+            curses.KEY_F4, curses.KEY_F5, curses.KEY_F6,
+        ):
+            self.detail_tab = key - curses.KEY_F1
+            self.detail_scroll = 0
             return True
 
         if key in (ord("o"), ord("O")):
             self.open_stream()
             return True
-
         if key in (ord("i"), ord("I")):
             self.open_all_info()
             return True
-
         if key in (ord("c"), ord("C")):
             L = self.current()
             stream = L.primary_stream() if L else None
             url = stream.url if stream else (L.flightclub_url if L else "")
             if url and shutil.which("wl-copy"):
                 subprocess.run(["wl-copy", url], check=False)
-                self.flash("URL copied to clipboard")
+                self.flash("URL copied")
             elif url:
                 self.flash(url[:80])
             else:
                 self.flash("No URL")
             return True
 
-        # Tabs
-        if key in (ord("["),):
-            self.detail_tab = (self.detail_tab - 1) % len(self.tabs)
-            self.detail_scroll = 0
-            return True
-        if key in (ord("]"),):
-            self.detail_tab = (self.detail_tab + 1) % len(self.tabs)
-            self.detail_scroll = 0
-            return True
-        if key in (ord("1"), ord("2"), ord("3"), ord("4"), ord("5")):
-            self.detail_tab = key - ord("1")
-            self.detail_scroll = 0
-            return True
-
-        # Navigation
+        # Navigation — context sensitive
         if self.focus == "list":
             if key in (curses.KEY_UP, ord("k")):
                 self.selected = max(0, self.selected - 1)
@@ -829,29 +860,38 @@ class SpaceflightApp:
             elif key in (curses.KEY_DOWN, ord("j")):
                 self.selected = min(max(0, len(self.filtered) - 1), self.selected + 1)
                 self.detail_scroll = 0
-            elif key in (curses.KEY_PPAGE,):
+            elif key == curses.KEY_PPAGE:
                 self.selected = max(0, self.selected - 10)
-            elif key in (curses.KEY_NPAGE,):
+            elif key == curses.KEY_NPAGE:
                 self.selected = min(max(0, len(self.filtered) - 1), self.selected + 10)
             elif key in (curses.KEY_HOME, ord("g")):
                 self.selected = 0
             elif key in (curses.KEY_END, ord("G")):
                 self.selected = max(0, len(self.filtered) - 1)
-            elif key in (curses.KEY_RIGHT, ord("l"), 10, 13):  # enter
+            elif key in (curses.KEY_RIGHT, ord("l"), 10, 13):
                 self.focus = "detail"
+                self.flash("Detail focus — ←/→ switch tabs, j/k scroll", 2.0)
+            elif key in (curses.KEY_LEFT, ord("h")):
+                pass  # stay on list
         else:
-            if key in (curses.KEY_UP, ord("k")):
+            # DETAIL focus: ←/→ and h/l change TABS (not panels)
+            if key in (curses.KEY_LEFT, ord("h")):
+                self.cycle_tab(-1)
+            elif key in (curses.KEY_RIGHT, ord("l")):
+                self.cycle_tab(+1)
+            elif key in (curses.KEY_UP, ord("k")):
                 self.detail_scroll = max(0, self.detail_scroll - 1)
             elif key in (curses.KEY_DOWN, ord("j")):
                 self.detail_scroll += 1
-            elif key in (curses.KEY_PPAGE,):
+            elif key == curses.KEY_PPAGE:
                 self.detail_scroll = max(0, self.detail_scroll - 10)
-            elif key in (curses.KEY_NPAGE,):
+            elif key == curses.KEY_NPAGE:
                 self.detail_scroll += 10
-            elif key in (curses.KEY_LEFT, ord("h")):
-                self.focus = "list"
-            elif key in (curses.KEY_HOME,):
+            elif key == curses.KEY_HOME:
                 self.detail_scroll = 0
+            elif key in (curses.KEY_BACKSPACE, 127, 8):
+                self.focus = "list"
+                self.flash("Back to launch queue", 1.0)
 
         return True
 
@@ -863,33 +903,43 @@ class SpaceflightApp:
         curses.cbreak()
         stdscr.keypad(True)
         stdscr.nodelay(True)
-        stdscr.timeout(200)
+        stdscr.timeout(self.frame_ms)
+        try:
+            curses.meta(stdscr, True)
+        except curses.error:
+            pass
         _init_colors()
 
         self.load(force=False)
-        last_tick = 0.0
+        self.last_cache_reload = time.time()
+        self.last_net_refresh = time.time()
 
         while True:
             now = time.time()
-            # Redraw at least 1/sec for countdown; immediately after key
-            if self.need_refresh or now - self.last_draw >= 0.5:
+
+            # Live redraw ~10fps for animations; countdown updates every frame
+            if self.need_refresh or now - self.last_draw >= (self.frame_ms / 1000.0):
+                # Bump cache age display each second without reread
+                if self.meta.get("age_sec") is not None and self.meta.get("fetched_at"):
+                    try:
+                        ft = datetime.fromisoformat(
+                            str(self.meta["fetched_at"]).replace("Z", "+00:00")
+                        )
+                        self.meta["age_sec"] = (datetime.now(timezone.utc) - ft).total_seconds()
+                    except (TypeError, ValueError):
+                        pass
                 self.draw(stdscr)
 
-            # Soft reload cache every 30s (daemon may have updated)
-            if now - last_tick >= 30:
-                cached, meta = load_launches()
-                if cached:
-                    self.launches = cached
-                    self.meta = meta
-                    prev_id = self.current().id if self.current() else None
-                    self.apply_filter()
-                    if prev_id:
-                        for i, L in enumerate(self.filtered):
-                            if L.id == prev_id:
-                                self.selected = i
-                                break
-                last_tick = now
-                self.need_refresh = True
+            # Soft cache reload every 15s (daemon writes)
+            if now - self.last_cache_reload >= 15:
+                self.soft_reload_cache()
+
+            # Network auto-refresh every 5 minutes
+            if now - self.last_net_refresh >= self.auto_refresh_sec:
+                try:
+                    self.load(force=False)
+                except Exception:  # noqa: BLE001
+                    self.last_net_refresh = now
 
             try:
                 key = stdscr.getch()

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "spaceflight"
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 # XDG dirs
 HOME = Path.home()
