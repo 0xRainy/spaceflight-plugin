@@ -85,19 +85,24 @@ def send_phone(
 
     server = (settings.ntfy_server or "https://ntfy.sh").rstrip("/")
     url = f"{server}/{topic}"
+    # HTTP headers must be latin-1; strip/replace non-ascii (emoji) from Title etc.
+    def _hdr(s: str, limit: int = 250) -> str:
+        return (s or "").encode("ascii", "replace").decode("ascii")[:limit]
+
     headers = {
-        "Title": title[:250],
+        "Title": _hdr(title),
         "Priority": str(max(1, min(5, priority))),
-        "Tags": tags,
-        "User-Agent": config.USER_AGENT,
+        "Tags": _hdr(tags, 100),
+        "User-Agent": _hdr(config.USER_AGENT, 200),
     }
     if settings.ntfy_token:
-        headers["Authorization"] = f"Bearer {settings.ntfy_token}"
+        headers["Authorization"] = f"Bearer {_hdr(settings.ntfy_token, 500)}"
     if click_url:
-        headers["Click"] = click_url
-        headers["Actions"] = f"view, Watch, {click_url}, clear=true"
+        headers["Click"] = _hdr(click_url, 500)
+        headers["Actions"] = _hdr(f"view, Watch, {click_url}, clear=true", 500)
 
     try:
+        # Body can be full UTF-8 (emoji OK here)
         r = requests.post(url, data=body.encode("utf-8"), headers=headers, timeout=15)
         if r.status_code >= 400:
             log.warning("ntfy push HTTP %s: %s", r.status_code, r.text[:200])
