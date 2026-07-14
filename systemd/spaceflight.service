@@ -1,0 +1,14 @@
+[Unit]
+Description=Spaceflight launch tracker (refresh + notifications)
+After=network-online.target graphical-session.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/projects/spaceflight/scripts/spaceflight daemon
+Restart=on-failure
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
