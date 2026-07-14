@@ -6,8 +6,9 @@ Data comes from public launch trackers (no AI, no account):
 
 | Source | What it provides |
 |--------|------------------|
-| [Launch Library 2](https://thespacedevs.com/llapi) | Schedule, NET, status, vehicle/booster, payload, pad, streams, updates |
+| [Launch Library 2](https://thespacedevs.com/llapi) | Schedule, NET, status, vehicle/booster, payload, pad, streams, updates, timeline when present |
 | [Rocket Launch Live](https://www.rocketlaunch.live/api) (free next-5) | Weather for near-term launches |
+| [SpaceX CMS](https://content.spacex.com) (`api/spacex-website/missions/…`) | Official countdown + flight-test timeline, mission copy, trajectory infographic (same data as spacex.com/launches/…) |
 
 Free LL2 rate limit is ~**15 requests/hour**. Spaceflight caches aggressively and only hits the network about **every 5 minutes**.
 
