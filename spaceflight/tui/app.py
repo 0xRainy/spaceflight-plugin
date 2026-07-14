@@ -904,10 +904,14 @@ class SpaceflightApp:
         stdscr.keypad(True)
         stdscr.nodelay(True)
         stdscr.timeout(self.frame_ms)
+        # Enable 8-bit input when available (API differs by ncurses build).
         try:
-            curses.meta(stdscr, True)
-        except curses.error:
-            pass
+            stdscr.meta(True)
+        except (curses.error, TypeError, AttributeError):
+            try:
+                curses.meta(1)
+            except (curses.error, TypeError, AttributeError):
+                pass
         _init_colors()
 
         self.load(force=False)
