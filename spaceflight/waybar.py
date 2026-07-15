@@ -288,16 +288,28 @@ def _stage_snippet(L: Launch, now: datetime, max_len: int = 22) -> str:
     return cur.label_t()
 
 
+def _bar_countdown(featured: Launch, now: datetime) -> str:
+    """Always a numeric T−/T+ readout (never LIVE-only / bare LIFTOFF)."""
+    from .models import _fmt_duration
+
+    secs = featured.seconds_to_net(now)
+    if secs is None:
+        return "NET TBD"
+    if secs >= 0:
+        return f"T-{_fmt_duration(secs, precise=True)}"
+    return f"T+{_fmt_duration(-secs, precise=True)}"
+
+
 def _bar_text(featured: Launch | None, now: datetime) -> str:
     """
     Compact label — always includes countdown:
       🚀  SPCX  T-0d:00h:09m:12s
-      🚀  TEST  T+0d:00h:01m:05s  ·  Max Q
+      🚀  TEST  T+0d:00h:01m:05s  LIVE  ·  Max Q
     """
     if featured is None:
         return "🚀  —"
     prov = provider_abbr(featured)
-    cd = featured.countdown_label(now, precise=True)
+    cd = _bar_countdown(featured, now)
     parts = ["🚀", prov, cd]
 
     # LIVE marker without dropping the countdown
