@@ -52,8 +52,8 @@ TEST_FLIGHT_ID = "spaceflight-test-loop"
 TEST_FLIGHT_PRE_SEC = 10 * 60
 TEST_FLIGHT_POST_SEC = 10 * 60
 TEST_FLIGHT_STATE = STATE_DIR / "test_flight.json"
-# Public video used so frame-grab can be exercised (any yt-dlp URL works)
-TEST_FLIGHT_STREAM = "https://www.youtube.com/watch?v=86YLFOog4GM"  # Earth from ISS
+# Public video used so frame-grab can be exercised (any yt-dlp-reachable URL)
+TEST_FLIGHT_STREAM = "https://www.youtube.com/watch?v=aqz-KE-bpKQ"  # Big Buck Bunny
 
 # Desktop countdown thresholds (seconds before NET)
 NOTIFY_THRESHOLDS = (
