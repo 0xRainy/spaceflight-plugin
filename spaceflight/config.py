@@ -23,6 +23,7 @@ DATA_DIR = XDG_DATA / APP_NAME
 LAUNCHES_CACHE = CACHE_DIR / "launches.json"
 WAYBAR_CACHE = CACHE_DIR / "waybar.json"
 NOTIFY_STATE = STATE_DIR / "notified.json"
+KNOWN_LAUNCHES = STATE_DIR / "known_launches.json"
 DAEMON_PID = STATE_DIR / "daemon.pid"
 LOG_FILE = STATE_DIR / "daemon.log"
 

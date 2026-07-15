@@ -255,6 +255,16 @@ def refresh_if_needed(
         meta["refreshed"] = True
         meta["refresh_error"] = None
         meta["ll2_backoff"] = False
+        # Detect newly scheduled flights vs previous known set
+        try:
+            from ..notify import notify_new_flights
+
+            new_fired = notify_new_flights(launches)
+            if new_fired:
+                meta["new_flights"] = new_fired
+                log.info("New flight notifications: %s", new_fired)
+        except Exception as nexc:  # noqa: BLE001
+            log.warning("new-flight notify failed: %s", nexc)
     except Exception as exc:  # noqa: BLE001
         log.error("Refresh failed: %s", exc)
         # Soft error — never wipe the TUI; cache stays valid
