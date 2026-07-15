@@ -139,30 +139,41 @@ def _flight_events(L: Launch) -> list[TimelineEvent]:
 def _stage_track(L: Launch, now: datetime, width: int = 28) -> list[str]:
     """
     Horizontal stage status bar (same idea as TUI PATH rail).
-    Returns 2–3 lines for the tooltip.
+    Pre-launch → countdown events; post-liftoff → flight stages.
     """
-    events = _flight_events(L)
-    if not events:
-        # Fall back to countdown milestones if no flight stages
-        brief = L.mission_brief
+    secs = L.seconds_to_net(now)
+    current_rel = -secs if secs is not None else None
+    brief = L.mission_brief
+
+    pre_launch = current_rel is None or current_rel < 0
+
+    if pre_launch:
         if brief and brief.countdown_events:
             events = list(brief.countdown_events)
         else:
             events = [e for e in L.stage_events() if e.relative_sec < 0]
+        # Still show flight track outline if only flight data exists
+        if not events:
+            events = _flight_events(L)
+            pre_launch = False  # treat as flight timeline preview
+    else:
+        events = _flight_events(L)
+        if not events and brief and brief.countdown_events:
+            events = list(brief.countdown_events)
+
     if not events:
         return ["  🛤️  no stage timeline yet"]
 
-    secs = L.seconds_to_net(now)
-    current_rel = -secs if secs is not None else None
-
     n = len(events)
+    # Active = last event at or before "now"; for pure future list, first upcoming
     active = 0
     if current_rel is not None:
-        for i, e in enumerate(events):
-            if e.relative_sec <= current_rel:
-                active = i
-            else:
-                break
+        past = [i for i, e in enumerate(events) if e.relative_sec <= current_rel]
+        if past:
+            active = past[-1]
+        else:
+            # All events still ahead (early countdown vs flight-only list)
+            active = 0
 
     track_w = max(12, min(width, 36))
     if n == 1:
@@ -170,22 +181,16 @@ def _stage_track(L: Launch, now: datetime, width: int = 28) -> list[str]:
     else:
         nodes_x = [int(i * (track_w - 1) / (n - 1)) for i in range(n)]
 
-    # Tick-ish animation via wall clock so tooltip feels alive when reopened
     tick = int(time.time())
 
-    if current_rel is None or current_rel < events[0].relative_sec:
+    if current_rel is None:
         icon_x = nodes_x[0]
-        phase = "ON PAD"
-        phase_emoji = "🛬" if current_rel is not None and current_rel < 0 else "🕐"
-        if current_rel is not None and current_rel < 0:
-            phase = "COUNTDOWN"
-            phase_emoji = "⏳"
-    elif active >= n - 1 and current_rel is not None and current_rel >= events[-1].relative_sec:
-        icon_x = nodes_x[-1]
-        phase = "COMPLETE"
-        phase_emoji = "✅"
-    else:
-        if active < n - 1 and current_rel is not None:
+        phase, phase_emoji = "SCHEDULED", "📋"
+    elif pre_launch or current_rel < 0:
+        # Progress through countdown milestones
+        if current_rel < events[0].relative_sec:
+            icon_x = nodes_x[0]
+        elif active < n - 1:
             t0 = events[active].relative_sec
             t1 = events[active + 1].relative_sec
             span = max(1, t1 - t0)
@@ -193,8 +198,20 @@ def _stage_track(L: Launch, now: datetime, width: int = 28) -> list[str]:
             icon_x = int(nodes_x[active] + frac * (nodes_x[active + 1] - nodes_x[active]))
         else:
             icon_x = nodes_x[active]
-        phase = "IN FLIGHT" if (current_rel is not None and current_rel >= 0) else "COUNTDOWN"
-        phase_emoji = "🚀" if phase == "IN FLIGHT" else "⏳"
+        phase, phase_emoji = "COUNTDOWN", "⏳"
+    elif active >= n - 1 and current_rel >= events[-1].relative_sec:
+        icon_x = nodes_x[-1]
+        phase, phase_emoji = "COMPLETE", "✅"
+    else:
+        if active < n - 1:
+            t0 = events[active].relative_sec
+            t1 = events[active + 1].relative_sec
+            span = max(1, t1 - t0)
+            frac = max(0.0, min(1.0, (current_rel - t0) / span))
+            icon_x = int(nodes_x[active] + frac * (nodes_x[active + 1] - nodes_x[active]))
+        else:
+            icon_x = nodes_x[active]
+        phase, phase_emoji = "IN FLIGHT", "🚀"
 
     track = ["─"] * track_w
     for i, nx in enumerate(nodes_x):
@@ -209,16 +226,25 @@ def _stage_track(L: Launch, now: datetime, width: int = 28) -> list[str]:
     if 0 <= icon_x < track_w:
         track[icon_x] = rocket
 
-    cur_e = events[active]
-    nxt_e = events[active + 1] if active + 1 < n else None
+    # NOW = last reached event; if nothing reached yet, show next upcoming
+    if current_rel is not None and current_rel < events[0].relative_sec:
+        cur_e = events[0]
+        nxt_e = events[1] if n > 1 else None
+        now_lbl = "NXT"  # nothing has fired yet
+    else:
+        cur_e = events[active]
+        nxt_e = events[active + 1] if active + 1 < n else None
+        now_lbl = "NOW"
 
     lines = [
         f"  🛤️  STAGES  {phase_emoji} {phase}  ·  {active + 1}/{n}",
         f"  {''.join(track)}",
-        f"  📍 NOW  {cur_e.label_t()}  {_short(cur_e.description, 32)}",
+        f"  📍 {now_lbl}  {cur_e.label_t()}  {_short(cur_e.description, 32)}",
     ]
-    if nxt_e:
+    if nxt_e and now_lbl == "NOW":
         lines.append(f"  ⏭️  NXT  {nxt_e.label_t()}  {_short(nxt_e.description, 32)}")
+    elif nxt_e and now_lbl == "NXT":
+        lines.append(f"  ⏭️  THEN {nxt_e.label_t()}  {_short(nxt_e.description, 32)}")
     return lines
 
 
