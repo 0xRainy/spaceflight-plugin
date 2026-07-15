@@ -542,8 +542,7 @@ def _fmt_duration(seconds: float, *, precise: bool = False) -> str:
     parts: list[str] = []
     if days > 0:
         parts.append(f"{days}d")
-    if hours > 0 or days > 0:
-        # Keep hours when days are present so we don't get 1d:30m:20s
+    if hours > 0:
         parts.append(f"{hours:02d}h")
     parts.append(f"{mins:02d}m")
     parts.append(f"{secs:02d}s")

@@ -84,7 +84,7 @@ def _dhms(s: int) -> str:
     parts: list[str] = []
     if d > 0:
         parts.append(f"{d}d")
-    if h > 0 or d > 0:
+    if h > 0:
         parts.append(f"{h:02d}h")
     parts.append(f"{m:02d}m")
     parts.append(f"{sec:02d}s")
