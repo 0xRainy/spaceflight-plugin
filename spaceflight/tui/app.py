@@ -59,7 +59,8 @@ class SpaceflightApp:
         self.auto_refresh_sec = config.MIN_FETCH_INTERVAL_SEC
         self.frame_ms = 80
         self._img_id: int | None = None
-        self._img_key: str = ""  # url+geometry — re-place when changes
+        self._img_key: str = ""  # url+geometry of currently shown image
+        self._pending_img: dict | None = None
         self._show_images = True
 
     # ── data ────────────────────────────────────────────────
@@ -151,6 +152,7 @@ class SpaceflightApp:
             gfx.delete_image(self._img_id)
             self._img_id = None
         self._img_key = ""
+        self._pending_img = None
 
     def cycle_tab(self, delta: int = 1) -> None:
         old = self.TABS[self.detail_tab][1]
@@ -236,18 +238,24 @@ class SpaceflightApp:
             self._invalidate_image()
             return
 
+        on_path = self.TABS[self.detail_tab][1] == "PATH"
+
         stdscr.erase()
         self._draw_header(stdscr, g)
         self._draw_queue(stdscr, g)
-        # Content first (text), then images after refresh
         place_img = self._draw_detail(stdscr, g)
         self._draw_footer(stdscr, g)
         stdscr.refresh()
 
+        # Image AFTER curses refresh so it sits on top. Transmit once, place
+        # each frame (a=p) — avoids re-upload flicker and footer ghosting.
         if place_img and self._show_images:
+            self._pending_img = place_img
             self._place_path_image(place_img)
-        elif self.TABS[self.detail_tab][1] != "PATH":
-            self._invalidate_image()
+        else:
+            self._pending_img = None
+            if not on_path:
+                self._invalidate_image()
 
         self.last_draw = time.time()
         self.need_refresh = False
@@ -467,109 +475,157 @@ class SpaceflightApp:
 
     def _draw_path(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> dict | None:
         """
-        PATH tab: real infographic (Kitty/Ghostty) + compact stage rail.
-        Returns placement info for post-refresh image draw.
+        PATH: official trajectory image + horizontal stage status bar.
         """
         brief = L.mission_brief
-        url = brief.infographic_url if brief else ""
+        url = (brief.infographic_url if brief else "") or ""
         now = datetime.now(timezone.utc)
-
-        # Header line
-        if url:
-            fill(stdscr, y, x, "trajectory · official graphic", w, T.pair(T.P_TITLE, bold=True))
-        else:
-            fill(stdscr, y, x, "trajectory · no official graphic for this flight", w, T.pair(T.P_WARN))
-
-        # Stage rail height fixed at bottom
-        rail_h = min(8, max(4, h // 3))
-        img_h = max(3, h - 1 - rail_h)
-        img_y = y + 1
-
-        # Stage progress rail (useful data)
-        rail_y = y + h - rail_h
-        hline(stdscr, rail_y, x, w, T.pair(T.P_BORDER))
-        events = []
-        if brief and brief.flight_events:
-            events = brief.flight_events
-        else:
-            events = [e for e in L.stage_events() if e.relative_sec >= 0][:12]
-
-        fill(stdscr, rail_y + 1, x, "FLIGHT STAGES", w, T.pair(T.P_DIM, bold=True))
         secs = L.seconds_to_net(now)
         current_rel = -secs if secs is not None else None
 
+        # Stage bar height (compact status strip)
+        rail_h = 5
+        header_h = 1
+        img_h = max(4, h - header_h - rail_h)
+        img_y = y + header_h
+        rail_y = y + h - rail_h
+
+        # Header
+        if url:
+            fill(stdscr, y, x, "trajectory", w, T.pair(T.P_TITLE, bold=True))
+        else:
+            fill(stdscr, y, x, "trajectory · no official graphic", w, T.pair(T.P_WARN))
+
+        # ── Stage status bar ────────────────────────────────
+        events = []
+        if brief and brief.flight_events:
+            events = list(brief.flight_events)
+        else:
+            events = [e for e in L.stage_events() if e.relative_sec >= 0]
+
+        # Clear rail background
+        for ry in range(rail_y, y + h):
+            fill(stdscr, ry, x, " " * w, w, T.pair(T.P_TEXT))
+        hline(stdscr, rail_y, x, w, T.pair(T.P_BORDER))
+
         if events:
-            # Horizontal progress through stages
-            n = len(events)
-            # Pick a window of stages around current
-            idx = 0
+            # Active index: last event with relative_sec <= now, else 0 (pre-launch)
+            active = 0
             if current_rel is not None:
                 for i, e in enumerate(events):
                     if e.relative_sec <= current_rel:
-                        idx = i
-            start = max(0, idx - 1)
-            window = events[start : start + min(5, n)]
-            ry = rail_y + 2
-            for e in window:
-                if ry >= y + h:
-                    break
-                mark, pair = "·", T.P_DIM
-                if current_rel is not None:
-                    if abs(e.relative_sec - current_rel) < 20:
-                        mark, pair = "▶", T.P_LIVE
-                    elif e.relative_sec <= current_rel:
-                        mark, pair = "✓", T.P_GO
-                fill(
-                    stdscr, ry, x,
-                    clip(f"{mark} {e.label_t():9} {e.description}", w),
-                    w,
-                    T.pair(pair, bold=mark == "▶"),
-                )
-                ry += 1
-        else:
-            fill(stdscr, rail_y + 2, x, "No stage timeline published yet", w, T.pair(T.P_DIM))
-            if brief and brief.page_url:
-                fill(stdscr, rail_y + 3, x, clip(brief.page_url, w), w, T.pair(T.P_ACCENT))
+                        active = i
+                    else:
+                        break
+            else:
+                active = 0
 
-        # Image area — leave blank cells for the graphic (don't fill with spaces after)
+            # Horizontal track with node markers
+            # Layout: [====●====○====○====]  icon walks the track
+            n = len(events)
+            track_w = max(8, w - 2)
+            # Build track string
+            nodes_x: list[int] = []
+            if n == 1:
+                nodes_x = [track_w // 2]
+            else:
+                for i in range(n):
+                    nodes_x.append(int(i * (track_w - 1) / (n - 1)))
+
+            # Progress fraction along track (pre-launch: icon at pad / first node)
+            if current_rel is None or current_rel < 0:
+                icon_x = nodes_x[0]
+                phase_label = "ON PAD"
+            elif active >= n - 1 and current_rel >= events[-1].relative_sec:
+                icon_x = nodes_x[-1]
+                phase_label = "COMPLETE"
+            else:
+                # Interpolate between active and next
+                if active < n - 1:
+                    t0 = events[active].relative_sec
+                    t1 = events[active + 1].relative_sec
+                    span = max(1, t1 - t0)
+                    frac = max(0.0, min(1.0, (current_rel - t0) / span))
+                    icon_x = int(nodes_x[active] + frac * (nodes_x[active + 1] - nodes_x[active]))
+                else:
+                    icon_x = nodes_x[active]
+                phase_label = "IN FLIGHT" if current_rel >= 0 else "COUNTDOWN"
+
+            # Line 1: title + phase
+            fill(
+                stdscr, rail_y + 1, x,
+                clip(f"STAGES  {phase_label}  {active + 1}/{n}", w),
+                w,
+                T.pair(T.P_DIM, bold=True),
+            )
+
+            # Line 2: track
+            track = ["─"] * track_w
+            for i, nx in enumerate(nodes_x):
+                if i < active:
+                    track[nx] = "●"
+                elif i == active:
+                    track[nx] = "◎"
+                else:
+                    track[nx] = "○"
+            # Animated vehicle glyph
+            rocket = "▸" if (self.tick // 3) % 2 == 0 else "▹"
+            if 0 <= icon_x < track_w:
+                track[icon_x] = rocket
+            track_s = "".join(track)
+            fill(stdscr, rail_y + 2, x, clip(track_s, w), w, T.pair(T.P_ACCENT, bold=True))
+
+            # Line 3: current + next stage labels
+            cur_e = events[active]
+            nxt_e = events[active + 1] if active + 1 < n else None
+            cur_txt = f"NOW {cur_e.label_t()} {cur_e.description}"
+            fill(stdscr, rail_y + 3, x, clip(cur_txt, w), w, T.pair(T.P_GO, bold=True))
+            if nxt_e and rail_y + 4 < y + h:
+                fill(
+                    stdscr, rail_y + 4, x,
+                    clip(f"NXT {nxt_e.label_t()} {nxt_e.description}", w),
+                    w,
+                    T.pair(T.P_MUTED),
+                )
+        else:
+            fill(stdscr, rail_y + 1, x, "No stage timeline for this flight yet", w, T.pair(T.P_DIM))
+            if brief and brief.page_url:
+                fill(stdscr, rail_y + 2, x, clip(brief.page_url, w), w, T.pair(T.P_ACCENT))
+
+        # ── Image region ────────────────────────────────────
         if not url:
-            # Fallback: clean message + link, no fake physics
-            fill(stdscr, img_y + 1, x, "When SpaceX (or the provider) publishes a path graphic,", w, T.pair(T.P_MUTED))
-            fill(stdscr, img_y + 2, x, "it appears here at full fidelity.", w, T.pair(T.P_MUTED))
-            page = brief.page_url if brief else ""
-            if page:
+            fill(stdscr, img_y + 1, x, "No path graphic from the provider.", w, T.pair(T.P_MUTED))
+            fill(stdscr, img_y + 2, x, "SpaceX publishes these on many Falcon / Starship pages.", w, T.pair(T.P_DIM))
+            if brief and brief.page_url:
                 fill(stdscr, img_y + 4, x, "press i · open mission page", w, T.pair(T.P_ACCENT))
             return None
 
-        fill(stdscr, img_y, x, " " * w, w, T.pair(T.P_DIM))  # one spacer under title
-        # Clear image region lightly (protocol draws on top)
-        for r in range(1, img_h):
-            # Don't paint full spaces every frame over the image — only first paint
-            pass
-
+        # Leave cells empty for the image (avoid painting footer-colored rows)
         return {
             "url": url,
             "col": x,
-            "row": img_y + 1,
-            "cols": w,
-            "rows": max(2, img_h - 1),
+            "row": img_y,
+            "cols": max(8, w - 1),
+            "rows": max(3, img_h - 1),
         }
 
     def _place_path_image(self, spec: dict) -> None:
-        """Place after curses refresh — images must be re-sent each full redraw."""
+        """Place after curses refresh. Transmit once; re-place cheaply."""
         url = spec["url"]
-        path = gfx.ensure_cached(url)
+        path = gfx.ensure_display_png(url) if hasattr(gfx, "ensure_display_png") else gfx.ensure_cached(url)
         if not path:
+            # Show a one-line error in flash occasionally
+            if self.tick % 40 == 0:
+                self.flash("Could not load trajectory image", 2.0)
             return
         key = f"{url}|{spec['col']}|{spec['row']}|{spec['cols']}|{spec['rows']}"
-        img_id = self._img_id or 42
         placed = gfx.place_image(
             path,
             col=spec["col"],
             row=spec["row"],
             cols=spec["cols"],
             rows=spec["rows"],
-            image_id=img_id,
+            image_id=gfx.PATH_IMAGE_ID,
         )
         if placed is not None:
             self._img_id = placed
@@ -804,22 +860,28 @@ class SpaceflightApp:
                 self.selected = max(0, self.selected - 1)
                 self.detail_scroll = 0
                 self._invalidate_image()
+                self.need_refresh = True
             elif key in (curses.KEY_DOWN, ord("j")):
                 self.selected = min(max(0, len(self.filtered) - 1), self.selected + 1)
                 self.detail_scroll = 0
                 self._invalidate_image()
+                self.need_refresh = True
             elif key == curses.KEY_PPAGE:
                 self.selected = max(0, self.selected - 10)
                 self._invalidate_image()
+                self.need_refresh = True
             elif key == curses.KEY_NPAGE:
                 self.selected = min(max(0, len(self.filtered) - 1), self.selected + 10)
                 self._invalidate_image()
+                self.need_refresh = True
             elif key in (curses.KEY_HOME, ord("g")):
                 self.selected = 0
                 self._invalidate_image()
+                self.need_refresh = True
             elif key in (curses.KEY_END, ord("G")):
                 self.selected = max(0, len(self.filtered) - 1)
                 self._invalidate_image()
+                self.need_refresh = True
             elif key in (curses.KEY_RIGHT, ord("l"), 10, 13):
                 self.focus = "detail"
                 self.flash("Detail · ←/→ tabs · j/k scroll", 1.5)
