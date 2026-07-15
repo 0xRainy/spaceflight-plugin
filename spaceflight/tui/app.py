@@ -404,10 +404,26 @@ class SpaceflightApp:
         self._draw_scroll(stdscr, content_y, ix, content_h, inner_w, self._lines_watch(L, inner_w))
         return None
 
-    def _draw_home(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> None:
+    def _preview_16x9(self, avail_w: int, avail_h: int) -> tuple[int, int]:
+        """
+        Cell size for a 16:9 frame.
+        Terminal cells are ~2× taller than wide, so rows ≈ cols * 9/32.
+        """
+        # Prefer full width, then clamp height to remaining space
+        cols = max(24, avail_w)
+        rows = max(5, int(round(cols * 9 / 32)))
+        if rows > avail_h:
+            rows = max(5, avail_h)
+            cols = max(24, min(avail_w, int(round(rows * 32 / 9))))
+        # Final clamp
+        cols = min(cols, avail_w)
+        rows = min(rows, avail_h)
+        return cols, rows
+
+    def _draw_home(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> dict | None:
         """
         Mission-control HOME — unit countdown cards, rocket, starfield,
-        progress, stage peek. Built to be fun to leave open.
+        progress, stage peek, and a 16:9 live preview band at the bottom.
         """
         now = datetime.now(timezone.utc)
         secs = L.seconds_to_net(now)
@@ -422,63 +438,96 @@ class SpaceflightApp:
             if 0 <= sy < h and 0 <= sx < w and ch.strip():
                 put(stdscr, y + sy, x + sx, ch, T.pair(T.P_DIM, dim=True))
 
-        # Live stream frame? reserve right column when available
+        # ── Reserve bottom band for 16:9 live preview ───────
         preview_spec = None
         show_preview = (
             self._show_images
             and (L.webcast_live or L.is_live_or_inflight())
             and L.primary_stream() is not None
-            and w >= 60
-            and h >= 12
+            and w >= 36
+            and h >= 16
         )
-        preview_w = 0
-        content_w = w
+        preview_rows = 0
+        preview_cols = 0
+        content_bottom = y + h  # exclusive
         if show_preview:
-            preview_w = max(22, min(40, w // 3))
-            content_w = w - preview_w - 1
+            # Leave 1 line for label + 16:9 image, cap at ~42% of panel
+            max_img_h = max(6, min(h - 10, int(h * 0.42)))
+            preview_cols, preview_rows = self._preview_16x9(w - 2, max_img_h)
+            # label + image
+            content_bottom = y + h - preview_rows - 1
+
             stream = L.primary_stream()
             assert stream is not None
             from ..stream_frame import frame_path
 
             fp = frame_path(L.id, stream.url)
             self._maybe_grab_stream_frame(L.id, stream.url)
+
+            img_col = x + max(0, (w - preview_cols) // 2)
+            img_row = y + h - preview_rows
+            label_row = img_row - 1
+            # Separator + label
+            hline(stdscr, label_row, x, w, T.pair(T.P_BORDER))
             if fp.exists() and fp.stat().st_size > 500:
-                preview_spec = {
-                    "path": str(fp),
-                    "col": x + content_w + 1,
-                    "row": y + 2,
-                    "cols": preview_w - 1,
-                    "rows": max(6, min(h - 4, 16)),
-                    "kind": "stream",
-                }
-                # Label above image area
                 fill(
-                    stdscr, y + 1, x + content_w + 1,
-                    clip("● LIVE PREVIEW · 1f/min", preview_w - 1),
-                    preview_w - 1,
+                    stdscr, label_row, x + 1,
+                    clip(f" ● LIVE PREVIEW · 16:9 · 1 frame/min ", w - 2),
+                    w - 2,
                     T.pair(T.P_LIVE, bold=True),
                 )
+                preview_spec = {
+                    "path": str(fp),
+                    "col": img_col,
+                    "row": img_row,
+                    "cols": preview_cols,
+                    "rows": preview_rows,
+                    "kind": "stream",
+                }
             else:
                 fill(
-                    stdscr, y + 2, x + content_w + 1,
-                    clip("grabbing frame…", preview_w - 1),
-                    preview_w - 1,
+                    stdscr, label_row, x + 1,
+                    clip(" ● LIVE PREVIEW · grabbing frame… ", w - 2),
+                    w - 2,
                     T.pair(T.P_DIM),
                 )
+                fill(
+                    stdscr, img_row, img_col,
+                    clip("┌" + "─" * max(0, preview_cols - 2) + "┐", preview_cols),
+                    preview_cols,
+                    T.pair(T.P_BORDER),
+                )
+                for rr in range(1, max(1, preview_rows - 1)):
+                    fill(
+                        stdscr, img_row + rr, img_col,
+                        clip("│" + " " * max(0, preview_cols - 2) + "│", preview_cols),
+                        preview_cols,
+                        T.pair(T.P_BORDER),
+                    )
+                if preview_rows > 1:
+                    fill(
+                        stdscr, img_row + preview_rows - 1, img_col,
+                        clip("└" + "─" * max(0, preview_cols - 2) + "┘", preview_cols),
+                        preview_cols,
+                        T.pair(T.P_BORDER),
+                    )
+
+        # Content must stay above the preview band
+        content_h = max(6, content_bottom - y)
 
         # ── Title strip ─────────────────────────────────────
         pulse = art.pulse_prefix(self.tick, L.webcast_live)
         live = "  ● LIVE" if L.webcast_live else ""
         test = "  [TEST]" if L.is_test else ""
         title = f"{pulse}  {L.short_name()}{live}{test}"
-        fill(stdscr, y, x, clip(title, content_w), content_w, T.pair(sp, bold=True))
+        fill(stdscr, y, x, clip(title, w), w, T.pair(sp, bold=True))
 
         # Scrolling provider · vehicle · pad marquee
         marquee = f"  {L.provider}  ·  {L.vehicle_name()}  ·  {L.pad or L.location}  ·  "
         if len(marquee) > 4:
             off = (self.tick // 2) % max(1, len(marquee))
-            scrolled = (marquee + marquee)[off : off + content_w]
-            fill(stdscr, y + 1, x, scrolled[:content_w], content_w, T.pair(T.P_MUTED))
+            scrolled = (marquee + marquee)[off : off + w]
+            fill(stdscr, y + 1, x, scrolled[:w], w, T.pair(T.P_MUTED))
 
         # ── Unit cards: DAYS | HRS | MIN | SEC ───────────────
         units = art.unit_parts(secs)
@@ -490,13 +539,11 @@ class SpaceflightApp:
         )
         sec_pair = T.P_LIVE if (near and (self.tick // 2) % 2 == 0) else cd_pair
 
-        # Rocket only when no live preview (avoid crowding)
         rocket = art.rocket_for(L.vehicle.full_name or L.name)
-        show_rocket = content_w >= 52 and h >= 14 and not show_preview
+        show_rocket = w >= 52 and content_h >= 14
         rk_w = max(len(r) for r in rocket) if show_rocket else 0
         cards_x = x + (rk_w + 2 if show_rocket else 0)
-        cards_w = content_w - (rk_w + 2 if show_rocket else 0)
-        w = content_w  # remaining layout uses content width
+        cards_w = w - (rk_w + 2 if show_rocket else 0)
 
         # Draw rocket + flame
         if show_rocket:
@@ -530,7 +577,7 @@ class SpaceflightApp:
             # Big-ish number (use render_big if fits, else plain bold)
             num_rows = art.render_big(val)
             # Shrink: only use first of wide glyphs if card is narrow
-            use_big = card_w >= 12 and card_y + 1 + art.DIGIT_H + 2 < y + h
+            use_big = card_w >= 12 and card_y + 1 + art.DIGIT_H + 2 < content_bottom
             if use_big:
                 for ri, rline in enumerate(num_rows):
                     # center in card
@@ -573,14 +620,14 @@ class SpaceflightApp:
         row = max(row, y + 10)
 
         # ── Status chip + progress ───────────────────────────
-        if row < y + h:
+        if row < content_bottom:
             status_chip = f" ● {L.status_abbrev or L.status or '?'} "
             fill(stdscr, row, x, status_chip, min(len(status_chip), w), T.pair(sp, bold=True))
             if L.status and len(L.status) < w - 20:
                 fill(stdscr, row, x + len(status_chip) + 1, clip(L.status, w - len(status_chip) - 1), w - len(status_chip) - 1, T.pair(T.P_MUTED))
             row += 1
 
-        if row < y + h and secs is not None:
+        if row < content_bottom and secs is not None:
             if secs > 0:
                 # Dual bars: week window + day window
                 week_frac = max(0.0, min(1.0, 1.0 - secs / (7 * 86400)))
@@ -588,7 +635,7 @@ class SpaceflightApp:
                 bw = max(10, w - 12)
                 fill(stdscr, row, x, f"WEEK  {progress_bar(week_frac, bw)}", w, T.pair(T.P_ACCENT))
                 row += 1
-                if row < y + h:
+                if row < content_bottom:
                     # Animated fill tip
                     tip = "▸" if self.tick % 2 == 0 else "▹"
                     bar = progress_bar(day_frac, bw - 1)
@@ -629,7 +676,7 @@ class SpaceflightApp:
         if w >= 56:
             col2 = x + w // 2
             for i, (lab, val) in enumerate(facts):
-                if row + i // 2 >= y + h - 4:
+                if row + i // 2 >= content_bottom - 3:
                     break
                 ry = row + i // 2
                 if i % 2 == 0:
@@ -641,7 +688,7 @@ class SpaceflightApp:
             row += (len(facts) + 1) // 2
         else:
             for lab, val in facts:
-                if row >= y + h - 4:
+                if row >= content_bottom - 3:
                     break
                 fill(stdscr, row, x, f"{lab:<7}", 7, T.pair(T.P_DIM))
                 fill(stdscr, row, x + 7, clip(val, w - 7), w - 7, T.pair(T.P_TEXT))
@@ -649,7 +696,7 @@ class SpaceflightApp:
 
         # ── Mini stage track ────────────────────────────────
         row += 1
-        if row < y + h - 1:
+        if row < content_bottom - 1:
             events = []
             if L.mission_brief:
                 if secs is not None and secs > 0 and L.mission_brief.countdown_events:
@@ -683,7 +730,7 @@ class SpaceflightApp:
                 fill(stdscr, row, x, f"STAGES {''.join(track)}", w, T.pair(T.P_ACCENT, bold=True))
                 row += 1
                 cur = events[active]
-                if row < y + h:
+                if row < content_bottom:
                     fill(
                         stdscr, row, x,
                         clip(f"NOW {cur.label_t()}  {cur.description}", w),
@@ -691,7 +738,7 @@ class SpaceflightApp:
                         T.pair(T.P_GO, bold=True),
                     )
                     row += 1
-                if active + 1 < n and row < y + h:
+                if active + 1 < n and row < content_bottom:
                     nxt = events[active + 1]
                     fill(
                         stdscr, row, x,
@@ -703,7 +750,7 @@ class SpaceflightApp:
 
         # ── Watch line ──────────────────────────────────────
         stream = L.primary_stream()
-        if stream and row < y + h:
+        if stream and row < content_bottom:
             blink = "▶" if self.tick % 2 == 0 else "▷"
             fill(
                 stdscr, row, x,
