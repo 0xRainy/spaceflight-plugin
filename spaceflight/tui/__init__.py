@@ -1,4 +1,4 @@
-"""btop-inspired terminal UI for launch tracking."""
+"""Modern mission-control TUI for launch tracking."""
 
 from .app import run_tui
 

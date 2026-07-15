@@ -56,17 +56,21 @@ systemctl --user status spaceflight
 | `Esc` / Backspace | Back to launch queue |
 | `q` | Quit |
 
-### Detail tabs
+### Views (v0.4 redesign)
 
-1. **OVERVIEW** — big live countdown, rocket art, flames near T-0, progress bar, mission blurb  
-2. **VEHICLE** — specs, record, booster serials / landings  
-3. **PAYLOAD** — mission description & orbit  
-4. **PATH** — ASCII projected trajectory + toy telemetry (ascent sketch)  
-5. **MISSION** — SpaceX-style page: countdown events, flight stages, **infographic**, brief (`s` cycles TIMELINE / INFOGRAPHIC / BRIEF)  
-6. **NEWS** — schedule changes / updates from LL2 editors  
-7. **LIVE** — webcast links  
+Inspired by **btop** / **lazygit** / **yazi** — Tokyo Night palette, soft panels, live countdowns.
 
-Countdowns recompute every frame (~10 fps animations, 1 Hz second digits). Network auto-refresh every **5 minutes**; cache reread every 15s if the daemon updated it.
+| Key | View | What you see |
+|-----|------|----------------|
+| `1` | **HOME** | Large live T-countdown, status, pad/orbit facts, next stage |
+| `2` | **PATH** | **Real trajectory image** (Kitty/Ghostty graphics) + stage rail |
+| `3` | **DATA** | Vehicle specs, boosters, payload, mission brief (scroll) |
+| `4` | **EVENTS** | Countdown + flight timeline + schedule updates |
+| `5` | **WATCH** | Livestreams & mission page links |
+
+PATH uses the official SpaceX infographic as a native terminal image (not ASCII). Ghostty is fully supported.
+
+Countdowns tick every frame. Network auto-refresh every **5 minutes**.
 
 ### Stage notifications (desktop)
 

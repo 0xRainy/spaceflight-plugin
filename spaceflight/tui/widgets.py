@@ -1,13 +1,16 @@
-"""Shared drawing primitives for the flashy TUI."""
+"""Drawing primitives — minimal chrome, btop/lazygit feel."""
 
 from __future__ import annotations
 
 import curses
 
+from . import theme as T
+
 
 def clip(s: str, width: int) -> str:
     if width <= 0:
         return ""
+    s = str(s)
     if len(s) <= width:
         return s
     if width <= 1:
@@ -15,70 +18,120 @@ def clip(s: str, width: int) -> str:
     return s[: width - 1] + "…"
 
 
-def fill(win, y: int, x: int, text: str, width: int, attr: int = 0) -> None:
-    try:
-        h, w = win.getmaxyx()
-        if y < 0 or y >= h or x >= w or width <= 0:
-            return
-        text = clip(str(text), min(width, w - x - (0 if x + width < w else 1)))
-        # Avoid writing bottom-right corner which can error
-        max_len = w - x
-        if y == h - 1:
-            max_len = max(0, max_len - 1)
-        text = text[:max_len]
-        if not text and width > 0:
-            return
-        win.addstr(y, x, text, attr)
-        pad = min(width, max_len) - len(text)
-        if pad > 0:
-            win.addstr(y, x + len(text), " " * pad, attr)
-    except curses.error:
-        pass
-
-
 def put(win, y: int, x: int, text: str, attr: int = 0) -> None:
     try:
         h, w = win.getmaxyx()
-        if y < 0 or y >= h or x >= w:
+        if y < 0 or y >= h or x >= w or x < 0:
             return
-        text = str(text)[: max(0, w - x - (1 if y == h - 1 else 0))]
+        limit = w - x
+        if y == h - 1:
+            limit = max(0, limit - 1)
+        text = str(text)[:limit]
         if text:
             win.addstr(y, x, text, attr)
     except curses.error:
         pass
 
 
-def panel_border(
-    stdscr,
+def fill(win, y: int, x: int, text: str, width: int, attr: int = 0) -> None:
+    try:
+        h, w = win.getmaxyx()
+        if y < 0 or y >= h or x >= w or width <= 0:
+            return
+        limit = min(width, w - x)
+        if y == h - 1:
+            limit = max(0, min(limit, w - x - 1))
+        text = clip(str(text), limit)
+        win.addstr(y, x, text, attr)
+        pad = limit - len(text)
+        if pad > 0:
+            win.addstr(y, x + len(text), " " * pad, attr)
+    except curses.error:
+        pass
+
+
+def hline(win, y: int, x: int, width: int, attr: int = 0) -> None:
+    try:
+        if width > 0:
+            win.hline(y, x, curses.ACS_HLINE, width, attr)
+    except curses.error:
+        pass
+
+
+def panel(
+    win,
     y: int,
     x: int,
     h: int,
     w: int,
-    title: str,
-    attr: int,
+    title: str = "",
+    *,
     focused: bool = False,
     subtitle: str = "",
 ) -> None:
+    """Soft single-line panel; focused edge uses accent color."""
     if h < 2 or w < 2:
         return
-    a = attr | (curses.A_BOLD if focused else 0)
+    attr = T.pair(T.P_BORDER_FOCUS if focused else T.P_BORDER, bold=focused)
     try:
-        stdscr.addch(y, x, curses.ACS_ULCORNER, a)
-        stdscr.addch(y, x + w - 1, curses.ACS_URCORNER, a)
-        stdscr.addch(y + h - 1, x, curses.ACS_LLCORNER, a)
-        stdscr.addch(y + h - 1, x + w - 1, curses.ACS_LRCORNER, a)
+        win.attron(attr)
+        # top
+        win.addch(y, x, curses.ACS_ULCORNER)
         if w > 2:
-            stdscr.hline(y, x + 1, curses.ACS_HLINE, w - 2, a)
-            stdscr.hline(y + h - 1, x + 1, curses.ACS_HLINE, w - 2, a)
+            win.hline(y, x + 1, curses.ACS_HLINE, w - 2)
+        win.addch(y, x + w - 1, curses.ACS_URCORNER)
+        # sides
         if h > 2:
-            stdscr.vline(y + 1, x, curses.ACS_VLINE, h - 2, a)
-            stdscr.vline(y + 1, x + w - 1, curses.ACS_VLINE, h - 2, a)
-        t = f" {title} "
-        if focused:
-            t = f"▶{title} "
-        if len(t) < w - 2:
-            fill(stdscr, y, x + 2, t, len(t), a | curses.A_BOLD)
-        if subtitle and len(subtitle) + 4 < w:
-            fill(stdscr, y, x + w - len(subtitle) - 3, f" {subtitle} ", len(subtitle) + 2, a)
+            win.vline(y + 1, x, curses.ACS_VLINE, h - 2)
+            win.vline(y + 1, x + w - 1, curses.ACS_VLINE, h - 2)
+        # bottom
+        win.addch(y + h - 1, x, curses.ACS_LLCORNER)
+        if w > 2:
+            win.hline(y + h - 1, x + 1, curses.ACS_HLINE, w - 2)
+        win.addch(y + h - 1, x + w - 1, curses.ACS_LRCORNER)
+        win.attroff(attr)
     except curses.error:
         pass
+
+    if title:
+        t = f" {title} "
+        if focused:
+            t = f" ● {title} "
+        fill(win, y, x + 2, t, min(len(t), w - 4), T.pair(T.P_TITLE, bold=True))
+    if subtitle and len(subtitle) + 4 < w:
+        fill(
+            win,
+            y,
+            x + w - len(subtitle) - 3,
+            f" {subtitle} ",
+            len(subtitle) + 2,
+            T.pair(T.P_DIM),
+        )
+
+
+def progress_bar(frac: float, width: int, fill_ch: str = "━", empty_ch: str = "─") -> str:
+    width = max(4, width)
+    frac = max(0.0, min(1.0, frac))
+    n = int(round(frac * width))
+    return fill_ch * n + empty_ch * (width - n)
+
+
+def pill(label: str, on: bool = False) -> str:
+    return f" {label} " if on else f" {label} "
+
+
+def status_glyph(abbrev: str, live: bool = False) -> str:
+    if live:
+        return "●"
+    a = (abbrev or "").lower()
+    if a in ("go",):
+        return "◆"
+    if "hold" in a:
+        return "⏸"
+    if a in ("success",):
+        return "✓"
+    if "fail" in a:
+        return "✗"
+    if a in ("tbd", "tbc"):
+        return "○"
+    return "·"
