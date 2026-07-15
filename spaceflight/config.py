@@ -38,7 +38,10 @@ RLL_NEXT = "https://fdo.rocketlaunch.live/json/launches/next/5"
 # Fetch policy — LL2 free tier ≈ 15 req/hour → stay ≤ 1 req / 5 min
 DEFAULT_FETCH_LIMIT = 25  # single page only (never multi-page on free tier)
 MIN_FETCH_INTERVAL_SEC = 360  # 6 minutes between LL2 pulls
-DAEMON_POLL_SEC = 60  # wake every minute to check countdowns / maybe refresh
+DAEMON_POLL_SEC = 1  # rewrite waybar JSON every second (countdown ticks)
+DAEMON_NOTIFY_IDLE_SEC = 15  # stage/threshold checks when quiet
+DAEMON_NOTIFY_HOT_SEC = 2  # stage checks near launch
+DAEMON_NET_CHECK_SEC = 5  # how often to consider a network refresh
 CACHE_STALE_SEC = 720  # consider cache stale after 12 min
 LL2_BACKOFF_SEC = 1800  # after 429, cool down 30 minutes
 RATE_LIMIT_STATE = STATE_DIR / "ll2_backoff.json"

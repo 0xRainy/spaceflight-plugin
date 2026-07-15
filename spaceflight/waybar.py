@@ -462,14 +462,15 @@ def emit_waybar(refresh: bool = False) -> dict:
         except Exception:
             launches = None
     payload = build_waybar_payload(launches)
+    # Always rewrite when bar text or class changes (countdown ticks every second).
+    # Tooltip can stay briefly stale if only age string differs mid-minute — still
+    # rewrite whenever text changes so the module never freezes.
     try:
         prev = load_waybar()
-        if (
-            prev.get("text") == payload.get("text")
-            and prev.get("class") == payload.get("class")
-            and prev.get("tooltip") == payload.get("tooltip")
-        ):
-            return payload
+        if prev.get("text") == payload.get("text") and prev.get("class") == payload.get("class"):
+            # Still refresh tooltip periodically so hover stays current
+            if prev.get("tooltip") == payload.get("tooltip"):
+                return payload
     except Exception:
         pass
     save_waybar(payload)
