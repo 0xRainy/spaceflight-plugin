@@ -228,11 +228,11 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
         if secs is None:
             continue
 
-        # Synthetic test flight: never phone; skip chatty desktop stage/live spam
-        skip_phone = bool(L.is_test) or L.id == config.TEST_FLIGHT_ID
+        # Test flight: desktop stages/thresholds OK for local testing; never phone
+        is_test = bool(L.is_test) or L.id == config.TEST_FLIGHT_ID
 
-        # Webcast live (desktop) — skip test flight
-        if L.webcast_live and not skip_phone:
+        # Webcast live (desktop) — skip test (too spammy on every loop)
+        if L.webcast_live and not is_test:
             key = f"{L.id}:live"
             if key not in sent:
                 send_desktop(
@@ -246,8 +246,8 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                 sent[key] = now.isoformat()
                 fired.append(key)
 
-        # Classic T-minus thresholds (desktop + phone)
-        if secs >= 0 and not skip_phone:
+        # Classic T-minus thresholds (desktop always; phone never for test)
+        if secs >= 0:
             for threshold, label in config.NOTIFY_THRESHOLDS:
                 if secs > threshold:
                     continue
@@ -256,6 +256,10 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                     continue
                 # Missed window entirely (daemon was down) — mark without spam
                 slack = max(threshold * 0.15, 120)
+                # Test flight: only fire T-10m (not T-24h/T-1h ghosts on every loop)
+                if is_test and label != "T-10m":
+                    sent[key] = now.isoformat()
+                    continue
                 if secs < threshold - slack and threshold > 600:
                     sent[key] = now.isoformat()
                     continue
@@ -285,7 +289,7 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                 fired.append(key)
 
             # Phone pushes: T-24h / T-1h / T-10m (never for test flight)
-            if settings.phone_enabled:
+            if settings.phone_enabled and not is_test:
                 for threshold, label in config.PHONE_NOTIFY_THRESHOLDS:
                     if secs > threshold:
                         continue
@@ -315,22 +319,24 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                     if ok:
                         sent[phone_key] = now.isoformat()
                         fired.append(phone_key)
-                    else:
-                        # Don't mark sent on failure — retry next poll
-                        pass
 
-        # Stage events (desktop only — skip synthetic test spam)
-        if L.is_test:
-            continue
+        # Stage events (desktop) — include TEST FLIGHT so you can verify stages
         current_rel = -secs
         for event in L.stage_events():
             if current_rel < event.relative_sec:
                 continue
-            key = f"{L.id}:stage:{event.relative_sec}:{event.description[:40]}"
+            # Per-cycle key for test flight so stages re-notify each loop
+            if is_test and L.net:
+                cycle = L.net.strftime("%Y%m%d%H%M%S")
+                key = f"{L.id}:stage:{cycle}:{event.relative_sec}:{event.description[:40]}"
+            else:
+                key = f"{L.id}:stage:{event.relative_sec}:{event.description[:40]}"
             if key in sent:
                 continue
             overdue = current_rel - event.relative_sec
-            if overdue > 180:
+            # Test flight: tight window so we don't dump the whole timeline on open
+            max_overdue = 45 if is_test else 180
+            if overdue > max_overdue:
                 sent[key] = now.isoformat()
                 continue
             _notify_stage(L, event, settings)

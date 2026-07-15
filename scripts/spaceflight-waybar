@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# Waybar custom module exec target — prints a single JSON line.
+# Waybar module — read precomputed JSON only (no Python).
+# The daemon (and TUI while open) rewrite this file every ~1s with a live countdown.
 set -euo pipefail
-SOURCE="${BASH_SOURCE[0]}"
-while [ -L "$SOURCE" ]; do
-  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
-export PYTHONPATH="${ROOT}${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m spaceflight waybar "$@"
+CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/spaceflight/waybar.json"
+if [[ -f "$CACHE" ]]; then
+  cat "$CACHE"
+else
+  # Fallback until daemon/TUI seeds the file
+  SOURCE="${BASH_SOURCE[0]}"
+  while [ -L "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+  done
+  ROOT="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+  export PYTHONPATH="${ROOT}${PYTHONPATH:+:$PYTHONPATH}"
+  exec python3 -m spaceflight waybar "$@"
+fi

@@ -273,6 +273,25 @@ class SpaceflightApp:
         self.last_draw = time.time()
         self.need_refresh = False
         self.tick += 1
+        # Keep waybar countdown alive while TUI is open (waybar only cats JSON)
+        if self.tick % max(1, int(1000 / max(1, self.frame_ms))) == 0:
+            try:
+                from ..waybar import emit_waybar
+
+                emit_waybar(refresh=False)
+            except Exception:
+                pass
+
+    def _ticker_countdown(self, L: Launch, now_utc: datetime) -> str:
+        """Always numeric T−/T+ for the top status bar."""
+        from ..models import _fmt_duration
+
+        secs = L.seconds_to_net(now_utc)
+        if secs is None:
+            return "NET TBD"
+        if secs >= 0:
+            return f"T-{_fmt_duration(secs, precise=True)}"
+        return f"T+{_fmt_duration(-secs, precise=True)}"
 
     def _draw_header(self, stdscr, g: dict) -> None:
         w = g["w"]
@@ -298,14 +317,20 @@ class SpaceflightApp:
         right = f" {spin} {age_s}  {self.FILTERS[self.filter_idx]}  n={len(self.filtered)}  "
         fill(stdscr, 0, max(0, w - len(right) - 1), right, len(right), T.pair(T.P_HEADER))
 
-        # Row 1 — ticker
+        # Row 1 — ticker: always T−/T+ countdown (never LIFTOFF-only)
         L = self.current()
         fill(stdscr, 1, 0, " " * w, w, T.pair(T.P_DIM))
         if L:
             now_utc = datetime.now(timezone.utc)
-            cd = L.countdown_label(now_utc, precise=True)
+            cd = self._ticker_countdown(L, now_utc)
             pulse = "●" if (L.webcast_live and self.tick % 2 == 0) else ("○" if L.webcast_live else "▸")
-            line = f"  {pulse}  {cd}   {L.status_abbrev or L.status}   {L.provider}  ·  {L.short_name()}  ·  {L.location}"
+            live = " LIVE" if L.webcast_live else ""
+            test = " [TEST]" if L.is_test else ""
+            line = (
+                f"  {pulse}  {cd}{live}{test}   "
+                f"{L.status_abbrev or L.status}   "
+                f"{L.provider}  ·  {L.short_name()}  ·  {L.location}"
+            )
             fill(stdscr, 1, 0, line, w, T.pair(self.status_pair(L), bold=True))
         else:
             fill(stdscr, 1, 2, "No launches in view — press r to refresh", w - 2, T.pair(T.P_DIM))
@@ -470,9 +495,15 @@ class SpaceflightApp:
             # Separator + label
             hline(stdscr, label_row, x, w, T.pair(T.P_BORDER))
             if fp.exists() and fp.stat().st_size > 500:
+                # Last update from frame file mtime (local time)
+                try:
+                    ts = datetime.fromtimestamp(fp.stat().st_mtime).astimezone()
+                    last_s = ts.strftime("%H:%M:%S")
+                except (OSError, ValueError, OverflowError):
+                    last_s = "—"
                 fill(
                     stdscr, label_row, x + 1,
-                    clip(f" ● LIVE PREVIEW · 16:9 · 1 frame/min ", w - 2),
+                    clip(f" ● LIVE PREVIEW · Last update: {last_s} ", w - 2),
                     w - 2,
                     T.pair(T.P_LIVE, bold=True),
                 )
@@ -487,7 +518,7 @@ class SpaceflightApp:
             else:
                 fill(
                     stdscr, label_row, x + 1,
-                    clip(" ● LIVE PREVIEW · grabbing frame… ", w - 2),
+                    clip(" ● LIVE PREVIEW · Last update: — · grabbing… ", w - 2),
                     w - 2,
                     T.pair(T.P_DIM),
                 )

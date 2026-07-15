@@ -16,12 +16,13 @@ from .waybar import emit_waybar
 
 
 class Daemon:
-    def __init__(self, poll_sec: float = config.DAEMON_POLL_SEC) -> None:
-        # poll_sec: how often we recompute countdowns/notifications (cheap).
-        # Network refresh is separately gated to MIN_FETCH_INTERVAL_SEC (5 min).
+    def __init__(self, poll_sec: float = 1.0) -> None:
+        # Waybar only cats a JSON file — we must rewrite it ~1Hz for live countdowns.
+        # Network refresh stays gated to MIN_FETCH_INTERVAL_SEC.
         self.poll_sec = poll_sec
-        self._base_poll = poll_sec
         self._stop = False
+        self._last_notify = 0.0
+        self._last_net = 0.0
 
     def stop(self, *_args) -> None:
         self._stop = True
@@ -36,10 +37,9 @@ class Daemon:
         try:
             while not self._stop:
                 self.tick()
-                # Sleep in small slices so SIGTERM is responsive
                 end = time.time() + self.poll_sec
                 while not self._stop and time.time() < end:
-                    time.sleep(min(1.0, end - time.time()))
+                    time.sleep(min(0.25, end - time.time()))
         finally:
             clear_pid()
             append_log("daemon stopped")
@@ -47,36 +47,39 @@ class Daemon:
 
     def tick(self) -> None:
         try:
-            launches, meta = refresh_if_needed(force=False)
-            if meta.get("refreshed"):
-                append_log(f"refreshed {len(launches)} launches")
-            elif meta.get("refresh_error"):
-                append_log(f"refresh error: {meta['refresh_error']}")
+            now_t = time.time()
+            # Network / notify less often; waybar every tick
+            do_net = now_t - self._last_net >= 5.0
+            if do_net:
+                launches, meta = refresh_if_needed(force=False)
+                self._last_net = now_t
+                if meta.get("refreshed"):
+                    append_log(f"refreshed {len(launches)} launches")
+                elif meta.get("refresh_error"):
+                    append_log(f"refresh error: {meta['refresh_error']}")
+                    launches, _ = load_launches()
+            else:
                 launches, _ = load_launches()
 
-            fired = check_and_notify(launches)
-            if fired:
-                append_log(f"notifications: {', '.join(fired)}")
-
-            emit_waybar(refresh=False)
-
-            # Poll faster near/during flight so stage events fire promptly
-            from datetime import datetime, timezone
-
+            # Stage notifications ~every 2s when hot, else every 15s
             now = datetime.now(timezone.utc)
             hot = False
             for L in launches:
                 secs = L.seconds_to_net(now)
-                if secs is None:
-                    continue
-                # T-2h through T+2h, or any launch with stage data in that window
-                if -7200 <= secs <= 7200:
+                if secs is not None and -7200 <= secs <= 7200:
                     hot = True
                     break
-            self.poll_sec = 15 if hot else self._base_poll
+            notify_every = 2.0 if hot else 15.0
+            if now_t - self._last_notify >= notify_every:
+                fired = check_and_notify(launches)
+                self._last_notify = now_t
+                if fired:
+                    append_log(f"notifications: {', '.join(fired)}")
+
+            # Always refresh waybar JSON (countdown ticks)
+            emit_waybar(refresh=False)
         except Exception as exc:  # noqa: BLE001
             append_log(f"tick error: {exc}")
-
 
 def os_getpid() -> int:
     import os
