@@ -236,28 +236,54 @@ def _stage_track(L: Launch, now: datetime, width: int = 28) -> list[str]:
         nxt_e = events[active + 1] if active + 1 < n else None
         now_lbl = "NOW"
 
+    def _stage_lines(prefix: str, e: TimelineEvent) -> list[str]:
+        """Time on first line, full description wrapped — no aggressive cutoff."""
+        head = f"  {prefix}  {e.label_t()}"
+        desc = (e.description or "").strip()
+        if not desc:
+            return [head]
+        # Wrap description to ~48 chars so waybar tooltips stay readable
+        wrap = 48
+        words = desc.split()
+        rows: list[str] = []
+        cur = ""
+        for word in words:
+            trial = word if not cur else f"{cur} {word}"
+            if len(trial) <= wrap:
+                cur = trial
+            else:
+                if cur:
+                    rows.append(cur)
+                cur = word
+        if cur:
+            rows.append(cur)
+        out = [f"{head}  {rows[0]}" if rows else head]
+        for extra in rows[1:]:
+            out.append(f"         {extra}")
+        return out
+
     lines = [
         f"  🛤️  STAGES  {phase_emoji} {phase}  ·  {active + 1}/{n}",
         f"  {''.join(track)}",
-        f"  📍 {now_lbl}  {cur_e.label_t()}  {_short(cur_e.description, 32)}",
     ]
+    lines.extend(_stage_lines(f"📍 {now_lbl}", cur_e))
     if nxt_e and now_lbl == "NOW":
-        lines.append(f"  ⏭️  NXT  {nxt_e.label_t()}  {_short(nxt_e.description, 32)}")
+        lines.extend(_stage_lines("⏭️  NXT", nxt_e))
     elif nxt_e and now_lbl == "NXT":
-        lines.append(f"  ⏭️  THEN {nxt_e.label_t()}  {_short(nxt_e.description, 32)}")
+        lines.extend(_stage_lines("⏭️  THEN", nxt_e))
     return lines
 
 
 def _bar_text(featured: Launch | None, now: datetime) -> str:
-    """Compact label: ◆  SPCX  T-44:06:56"""
+    """Compact label: 🚀  SPCX  T-44:06:56"""
     if featured is None:
-        return "◆  —"
-    g = _glyph(featured)
+        return "🚀  —"
     prov = provider_abbr(featured)
     if featured.webcast_live:
-        return f"●  {prov}  LIVE"
+        return f"🚀  {prov}  LIVE"
     cd = featured.countdown_label(now, precise=True)
-    return f"{g}  {prov}  {cd}"
+    # Keep rocket emoji; glyph only for live state above
+    return f"🚀  {prov}  {cd}"
 
 
 def _tooltip(launches: list[Launch], featured: Launch | None, meta: dict, now: datetime) -> str:
@@ -289,16 +315,32 @@ def _tooltip(launches: list[Launch], featured: Launch | None, meta: dict, now: d
         local = featured.net.astimezone().strftime("%Y-%m-%d %H:%M %Z")
         utc = featured.net.strftime("%H:%M UTC")
         lines.append(f"🕐  NET  {local}  ({utc})")
+
+    # Weather — always use a widely-supported emoji (⛅); 🌤️ is often missing in fonts
+    wx_parts: list[str] = []
     if featured.probability is not None:
-        lines.append(f"🌤️  Weather go  {featured.probability}%")
-    if featured.weather and featured.weather.condition:
+        wx_parts.append(f"go {featured.probability}%")
+    if featured.weather:
         w = featured.weather
-        extra = f"  {w.temp_f}°F" if w.temp_f else ""
-        lines.append(f"    {w.condition}{extra}")
+        if w.condition:
+            wx_parts.append(w.condition)
+        if w.temp_f:
+            try:
+                t = f"{float(w.temp_f):.0f}°F"
+            except (TypeError, ValueError):
+                t = f"{w.temp_f}°F"
+            wx_parts.append(t)
+        if w.wind_mph:
+            try:
+                wx_parts.append(f"wind {float(w.wind_mph):.0f} mph")
+            except (TypeError, ValueError):
+                wx_parts.append(f"wind {w.wind_mph} mph")
+    if wx_parts:
+        lines.append(f"⛅  {' · '.join(wx_parts)}")
 
     stream = featured.primary_stream()
     if stream:
-        lines.append(f"📺  {_short(stream.title or 'Watch stream', 40)}")
+        lines.append(f"📺  {_short(stream.title or 'Watch stream', 44)}")
     if featured.mission_brief and featured.mission_brief.page_url:
         lines.append("🔗  Mission page available  (i in TUI)")
 
