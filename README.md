@@ -99,9 +99,9 @@ Or: `export SPACEFLIGHT_NTFY_TOPIC=your-long-random-topic-here`
 
 Phone gets **T-24h**, **T-1h**, and **T-10m** pushes with mission name, vehicle, location, local + UTC T-0, and a watch/info link (tappable). Stage spam stays on the desktop only.
 
-### MISSION tab scrolling
+### Scrolling
 
-On **BRIEF** and **INFOGRAPHIC**, use **`j`/`k`** (or PgUp/PgDn) to scroll. Press **`s`** to cycle views (auto-focuses the detail pane). Long briefs show a `j/k scroll` HUD.
+On **DATA** / **EVENTS** / **WATCH**, press **Tab** to focus the detail pane, then **`j`/`k`** to scroll. Long content shows a scroll HUD.
 
 ## Waybar
 
