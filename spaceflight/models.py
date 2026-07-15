@@ -528,13 +528,26 @@ def parse_hms_to_seconds(text: str) -> int | None:
 
 
 def _fmt_duration(seconds: float, *, precise: bool = False) -> str:
-    """Format as 1d:20h:30m:20s (always includes days for a stable ticking readout)."""
+    """
+    Compact duration: drop leading zero units.
+      1d:20h:30m:20s
+      20h:30m:20s
+      30m:20s
+    Minutes and seconds always shown.
+    """
     s = int(abs(seconds))
     days, rem = divmod(s, 86400)
     hours, rem = divmod(rem, 3600)
     mins, secs = divmod(rem, 60)
-    # precise and default both use full d:h:m:s so waybar + TUI stay consistent
-    return f"{days}d:{hours:02d}h:{mins:02d}m:{secs:02d}s"
+    parts: list[str] = []
+    if days > 0:
+        parts.append(f"{days}d")
+    if hours > 0 or days > 0:
+        # Keep hours when days are present so we don't get 1d:30m:20s
+        parts.append(f"{hours:02d}h")
+    parts.append(f"{mins:02d}m")
+    parts.append(f"{secs:02d}s")
+    return ":".join(parts)
 
 
 def split_duration(seconds: float | None) -> tuple[int, int, int, int]:

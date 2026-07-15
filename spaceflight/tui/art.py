@@ -77,10 +77,18 @@ def compact_countdown_parts(secs: float | None, status: str = "") -> str:
 
 
 def _dhms(s: int) -> str:
+    """Match models._fmt_duration: omit 0d / 0h, always m+s."""
     d, rem = divmod(s, 86400)
     h, rem = divmod(rem, 3600)
     m, sec = divmod(rem, 60)
-    return f"{d}d:{h:02d}h:{m:02d}m:{sec:02d}s"
+    parts: list[str] = []
+    if d > 0:
+        parts.append(f"{d}d")
+    if h > 0 or d > 0:
+        parts.append(f"{h:02d}h")
+    parts.append(f"{m:02d}m")
+    parts.append(f"{sec:02d}s")
+    return ":".join(parts)
 
 
 def unit_parts(secs: float | None) -> tuple[str, str, str, str]:
