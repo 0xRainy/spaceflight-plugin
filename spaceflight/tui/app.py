@@ -393,85 +393,271 @@ class SpaceflightApp:
         return None
 
     def _draw_home(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> None:
+        """
+        Mission-control HOME — unit countdown cards, rocket, starfield,
+        progress, stage peek. Built to be fun to leave open.
+        """
         now = datetime.now(timezone.utc)
         secs = L.seconds_to_net(now)
         sp = self.status_pair(L)
+        sign = "T−" if (secs is None or secs >= 0) else "T+"
+        if secs is not None and secs < 0 and abs(secs) < 120:
+            sign = "T+"
 
-        # Big countdown
-        big = art.compact_countdown_parts(secs, L.status_abbrev or L.status)
-        while True:
-            rows = art.render_big(big)
-            if not rows or len(rows[0]) <= w or len(big) < 6:
-                break
-            big = big[: max(4, len(big) - 2)]
+        # Soft starfield behind content (dim, non-destructive where we write later)
+        if not hasattr(self, "_home_stars"):
+            self._home_stars = art.Starfield(seed=13)
+        self._home_stars.resize(max(1, w), max(1, h))
+        for sy, sx, ch in self._home_stars.cells(self.tick):
+            if 0 <= sy < h and 0 <= sx < w and ch.strip():
+                # Don't paint over edges heavily
+                put(stdscr, y + sy, x + sx, ch, T.pair(T.P_DIM, dim=True))
 
-        cd_pair = T.P_LIVE if L.webcast_live or (secs is not None and -120 < (secs or 0) < 300) else T.P_COUNTDOWN
-        if L.is_hold():
-            cd_pair = T.P_HOLD
-        for i, line in enumerate(rows):
-            if i >= h - 1:
-                break
-            # Center the digits
-            pad = max(0, (w - len(line)) // 2)
-            put(stdscr, y + i, x + pad, line[:w], T.pair(cd_pair, bold=True))
+        # ── Title strip ─────────────────────────────────────
+        pulse = art.pulse_prefix(self.tick, L.webcast_live)
+        live = "  ● LIVE" if L.webcast_live else ""
+        title = f"{pulse}  {L.short_name()}{live}"
+        fill(stdscr, y, x, clip(title, w), w, T.pair(sp, bold=True))
 
-        row = y + min(len(rows), h - 6) + 1
-        if row >= y + h:
-            return
+        # Scrolling provider · vehicle · pad marquee
+        marquee = f"  {L.provider}  ·  {L.vehicle_name()}  ·  {L.pad or L.location}  ·  "
+        if len(marquee) > 4:
+            off = (self.tick // 2) % max(1, len(marquee))
+            scrolled = (marquee + marquee)[off : off + w]
+            fill(stdscr, y + 1, x, scrolled[:w], w, T.pair(T.P_MUTED))
 
-        # Status + progress
-        fill(stdscr, row, x, f"{L.status_abbrev or L.status}  ·  {L.status}", w, T.pair(sp, bold=True))
-        row += 1
-        if secs is not None and secs > 0:
-            frac = max(0.0, 1.0 - secs / (7 * 86400))
-            bar = progress_bar(frac, max(8, w - 14))
-            fill(stdscr, row, x, f"to NET  {bar}", w, T.pair(T.P_ACCENT))
+        # ── Unit cards: DAYS | HRS | MIN | SEC ───────────────
+        units = art.unit_parts(secs)
+        labels = ("DAYS", "HRS", "MIN", "SEC")
+        # Color: seconds pulse near T-0
+        near = secs is not None and 0 <= secs < 600
+        past = secs is not None and secs < 0
+        cd_pair = T.P_HOLD if L.is_hold() else (
+            T.P_LIVE if (L.webcast_live or near or past) else T.P_COUNTDOWN
+        )
+        # Flash seconds digit color every other tick when T- < 1h
+        sec_pair = T.P_LIVE if (near and (self.tick // 2) % 2 == 0) else cd_pair
+
+        # Layout: optional rocket on left if wide enough
+        rocket = art.rocket_for(L.vehicle.full_name or L.name)
+        show_rocket = w >= 52 and h >= 14
+        rk_w = max(len(r) for r in rocket) if show_rocket else 0
+        cards_x = x + (rk_w + 2 if show_rocket else 0)
+        cards_w = w - (rk_w + 2 if show_rocket else 0)
+
+        # Draw rocket + flame
+        if show_rocket:
+            flame = art.flame_frame(self.tick) if (secs is not None and secs < 3600) else []
+            # Hover bounce near launch
+            y_off = 0
+            if secs is not None and 0 < secs < 300:
+                y_off = (self.tick // 3) % 2
+            for i, line in enumerate(rocket):
+                put(stdscr, y + 3 + i + y_off, x, line, T.pair(T.P_TEXT, bold=True))
+            for i, line in enumerate(flame):
+                put(
+                    stdscr, y + 3 + len(rocket) + i + y_off, x, line,
+                    T.pair(T.P_WARN if self.tick % 2 else T.P_LIVE, bold=True),
+                )
+
+        # Four unit cards across remaining width
+        card_gap = 1
+        n_cards = 4
+        card_w = max(8, (cards_w - card_gap * (n_cards - 1)) // n_cards)
+        card_y = y + 3
+        pairs = [cd_pair, cd_pair, cd_pair, sec_pair]
+
+        for i, (val, lab) in enumerate(zip(units, labels)):
+            cx = cards_x + i * (card_w + card_gap)
+            # Card frame
+            top = "┌" + "─" * max(1, card_w - 2) + "┐"
+            bot = "└" + "─" * max(1, card_w - 2) + "┘"
+            mid_h = 3
+            put(stdscr, card_y, cx, top[:card_w], T.pair(T.P_BORDER_FOCUS if i == 3 and near else T.P_BORDER))
+            # Big-ish number (use render_big if fits, else plain bold)
+            num_rows = art.render_big(val)
+            # Shrink: only use first of wide glyphs if card is narrow
+            use_big = card_w >= 12 and card_y + 1 + art.DIGIT_H + 2 < y + h
+            if use_big:
+                for ri, rline in enumerate(num_rows):
+                    # center in card
+                    pad = max(1, (card_w - len(rline)) // 2)
+                    put(stdscr, card_y + 1 + ri, cx + pad, rline[: max(0, card_w - pad - 1)], T.pair(pairs[i], bold=True))
+                label_y = card_y + 1 + art.DIGIT_H
+                put(stdscr, label_y, cx, bot[:card_w], T.pair(T.P_BORDER))
+                lab_s = f" {lab} "
+                put(
+                    stdscr, label_y + 1, cx + max(0, (card_w - len(lab_s)) // 2),
+                    lab_s[:card_w],
+                    T.pair(T.P_DIM, bold=True),
+                )
+            else:
+                # Compact card:  │ 01 │  + label
+                for dy in range(1, mid_h):
+                    put(stdscr, card_y + dy, cx, "│", T.pair(T.P_BORDER))
+                    put(stdscr, card_y + dy, cx + card_w - 1, "│", T.pair(T.P_BORDER))
+                num = f" {val} "
+                put(
+                    stdscr, card_y + 1, cx + max(1, (card_w - len(num)) // 2),
+                    num[: card_w - 2],
+                    T.pair(pairs[i], bold=True),
+                )
+                put(stdscr, card_y + mid_h, cx, bot[:card_w], T.pair(T.P_BORDER))
+                lab_s = f" {lab} "
+                put(
+                    stdscr, card_y + mid_h + 1, cx + max(0, (card_w - len(lab_s)) // 2),
+                    lab_s[:card_w],
+                    T.pair(T.P_DIM),
+                )
+
+        # Sign badge T− / T+
+        badge = f" {sign} "
+        if secs is not None and 0 <= secs < 60:
+            badge = " T−0 "
+        put(stdscr, card_y, cards_x + max(0, cards_w - len(badge) - 1), badge, T.pair(cd_pair, bold=True))
+
+        row = card_y + (art.DIGIT_H + 3 if (w >= 52 and card_w >= 12) else 6)
+        row = max(row, y + 10)
+
+        # ── Status chip + progress ───────────────────────────
+        if row < y + h:
+            status_chip = f" ● {L.status_abbrev or L.status or '?'} "
+            fill(stdscr, row, x, status_chip, min(len(status_chip), w), T.pair(sp, bold=True))
+            if L.status and len(L.status) < w - 20:
+                fill(stdscr, row, x + len(status_chip) + 1, clip(L.status, w - len(status_chip) - 1), w - len(status_chip) - 1, T.pair(T.P_MUTED))
             row += 1
-        elif secs is not None and secs <= 0:
-            from .flightpath import vehicle_progress
 
-            frac = vehicle_progress(L, now)
-            bar = progress_bar(frac, max(8, w - 14), fill_ch="═", empty_ch="─")
-            fill(stdscr, row, x, f"flight  {bar}", w, T.pair(T.P_LIVE, bold=True))
-            row += 1
+        if row < y + h and secs is not None:
+            if secs > 0:
+                # Dual bars: week window + day window
+                week_frac = max(0.0, min(1.0, 1.0 - secs / (7 * 86400)))
+                day_frac = max(0.0, min(1.0, 1.0 - (secs % 86400) / 86400)) if secs < 7 * 86400 else 0.0
+                bw = max(10, w - 12)
+                fill(stdscr, row, x, f"WEEK  {progress_bar(week_frac, bw)}", w, T.pair(T.P_ACCENT))
+                row += 1
+                if row < y + h:
+                    # Animated fill tip
+                    tip = "▸" if self.tick % 2 == 0 else "▹"
+                    bar = progress_bar(day_frac, bw - 1)
+                    fill(stdscr, row, x, f"DAY   {bar}{tip}", w, T.pair(T.P_GO if day_frac > 0.7 else T.P_ACCENT))
+                    row += 1
+            else:
+                from .flightpath import vehicle_progress
 
+                frac = vehicle_progress(L, now)
+                bw = max(10, w - 12)
+                fill(
+                    stdscr, row, x,
+                    f"FLIGHT {progress_bar(frac, bw, fill_ch='═', empty_ch='─')}",
+                    w,
+                    T.pair(T.P_LIVE, bold=True),
+                )
+                row += 1
+
+        # ── Fact grid (2-col when wide) ──────────────────────
         row += 1
         facts = [
-            ("NET", L.net.astimezone().strftime("%Y-%m-%d %H:%M %Z") if L.net else "—"),
+            ("NET", L.net.astimezone().strftime("%a %Y-%m-%d %H:%M %Z") if L.net else "—"),
             ("VEHICLE", L.vehicle.full_name or L.vehicle_name()),
-            ("PAD", f"{L.pad} · {L.location}" if L.pad else L.location or "—"),
+            ("PAD", f"{L.pad}" if L.pad else "—"),
+            ("SITE", L.location or "—"),
             ("ORBIT", f"{L.payload.orbit or '—'} ({L.payload.orbit_abbrev or '?'})"),
         ]
         if L.probability is not None:
             facts.append(("WX GO", f"{L.probability}%"))
-        if L.weather and L.weather.condition:
-            facts.append(("WEATHER", f"{L.weather.condition} {L.weather.temp_f}°F"))
+        if L.weather and (L.weather.condition or L.weather.temp_f):
+            t = ""
+            try:
+                t = f" {float(L.weather.temp_f):.0f}°F" if L.weather.temp_f else ""
+            except (TypeError, ValueError):
+                t = f" {L.weather.temp_f}" if L.weather.temp_f else ""
+            facts.append(("WEATHER", f"{L.weather.condition or '—'}{t}"))
 
-        for label, val in facts:
-            if row >= y + h:
-                break
-            fill(stdscr, row, x, f"{label:<8}", 8, T.pair(T.P_DIM))
-            fill(stdscr, row, x + 8, clip(val, w - 8), w - 8, T.pair(T.P_TEXT))
-            row += 1
-
-        # Next stage (useful, not fake telemetry)
-        nxt = L.next_stage(now)
-        cur = L.current_stage(now)
-        if row < y + h - 1:
-            row += 1
-            if cur:
-                fill(stdscr, row, x, "NOW ", 4, T.pair(T.P_GO, bold=True))
-                fill(stdscr, row, x + 4, clip(f"{cur.label_t()}  {cur.description}", w - 4), w - 4, T.pair(T.P_MUTED))
+        if w >= 56:
+            col2 = x + w // 2
+            for i, (lab, val) in enumerate(facts):
+                if row + i // 2 >= y + h - 4:
+                    break
+                ry = row + i // 2
+                if i % 2 == 0:
+                    fill(stdscr, ry, x, f"{lab:<7}", 7, T.pair(T.P_DIM))
+                    fill(stdscr, ry, x + 7, clip(val, col2 - x - 8), col2 - x - 8, T.pair(T.P_TEXT))
+                else:
+                    fill(stdscr, ry, col2, f"{lab:<7}", 7, T.pair(T.P_DIM))
+                    fill(stdscr, ry, col2 + 7, clip(val, w - (col2 - x) - 7), w - (col2 - x) - 7, T.pair(T.P_TEXT))
+            row += (len(facts) + 1) // 2
+        else:
+            for lab, val in facts:
+                if row >= y + h - 4:
+                    break
+                fill(stdscr, row, x, f"{lab:<7}", 7, T.pair(T.P_DIM))
+                fill(stdscr, row, x + 7, clip(val, w - 7), w - 7, T.pair(T.P_TEXT))
                 row += 1
-            if nxt and row < y + h:
-                fill(stdscr, row, x, "NEXT", 4, T.pair(T.P_WARN, bold=True))
-                fill(stdscr, row, x + 4, clip(f"{nxt.label_t()}  {nxt.description}", w - 4), w - 4, T.pair(T.P_MUTED))
 
+        # ── Mini stage track ────────────────────────────────
+        row += 1
+        if row < y + h - 1:
+            events = []
+            if L.mission_brief:
+                if secs is not None and secs > 0 and L.mission_brief.countdown_events:
+                    events = list(L.mission_brief.countdown_events)
+                elif L.mission_brief.flight_events:
+                    events = list(L.mission_brief.flight_events)
+            if not events:
+                events = list(L.stage_events())[:12]
+            if events:
+                n = len(events)
+                track_w = max(12, min(w - 2, 40))
+                current_rel = -secs if secs is not None else None
+                active = 0
+                if current_rel is not None:
+                    past = [i for i, e in enumerate(events) if e.relative_sec <= current_rel]
+                    active = past[-1] if past else 0
+                nodes = [int(i * (track_w - 1) / max(1, n - 1)) for i in range(n)] if n > 1 else [track_w // 2]
+                track = ["─"] * track_w
+                for i, nx in enumerate(nodes):
+                    if 0 <= nx < track_w:
+                        track[nx] = "●" if i < active else ("◎" if i == active else "○")
+                icon = nodes[min(active, len(nodes) - 1)]
+                # animate between nodes when counting down into next
+                if current_rel is not None and active < n - 1:
+                    t0, t1 = events[active].relative_sec, events[active + 1].relative_sec
+                    span = max(1, t1 - t0)
+                    frac = max(0.0, min(1.0, (current_rel - t0) / span))
+                    icon = int(nodes[active] + frac * (nodes[active + 1] - nodes[active]))
+                if 0 <= icon < track_w:
+                    track[icon] = "▸" if self.tick % 2 == 0 else "▹"
+                fill(stdscr, row, x, f"STAGES {''.join(track)}", w, T.pair(T.P_ACCENT, bold=True))
+                row += 1
+                cur = events[active]
+                if row < y + h:
+                    fill(
+                        stdscr, row, x,
+                        clip(f"NOW {cur.label_t()}  {cur.description}", w),
+                        w,
+                        T.pair(T.P_GO, bold=True),
+                    )
+                    row += 1
+                if active + 1 < n and row < y + h:
+                    nxt = events[active + 1]
+                    fill(
+                        stdscr, row, x,
+                        clip(f"NXT {nxt.label_t()}  {nxt.description}", w),
+                        w,
+                        T.pair(T.P_MUTED),
+                    )
+                    row += 1
+
+        # ── Watch line ──────────────────────────────────────
         stream = L.primary_stream()
-        if stream and row < y + h - 1:
-            row += 1
-            fill(stdscr, row, x, "WATCH", 5, T.pair(T.P_LIVE if L.webcast_live else T.P_ACCENT, bold=True))
-            fill(stdscr, row, x + 6, clip(stream.url, w - 6), w - 6, T.pair(T.P_ACCENT))
+        if stream and row < y + h:
+            blink = "▶" if self.tick % 2 == 0 else "▷"
+            fill(
+                stdscr, row, x,
+                clip(f"{blink} WATCH  {stream.title or stream.url}", w),
+                w,
+                T.pair(T.P_LIVE if L.webcast_live else T.P_ACCENT, bold=True),
+            )
 
     def _draw_path(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> dict | None:
         """

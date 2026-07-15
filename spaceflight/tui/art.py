@@ -60,7 +60,7 @@ def render_big(text: str) -> list[str]:
 
 
 def compact_countdown_parts(secs: float | None, status: str = "") -> str:
-    """String for big digit display, e.g. 'T-01:23:45' or 'LIFTOFF'."""
+    """String for big digit display, e.g. 'T-1d:20h:30m:20s' or 'LIFTOFF'."""
     if secs is None:
         return "NET TBD"
     abb = (status or "").lower()
@@ -72,18 +72,26 @@ def compact_countdown_parts(secs: float | None, status: str = "") -> str:
         s = int(-secs)
         if s < 120:
             return "LIFTOFF"
-        # T+
-        return "T+" + _hms(s)
-    return "T-" + _hms(int(secs))
+        return "T+" + _dhms(s)
+    return "T-" + _dhms(int(secs))
 
 
-def _hms(s: int) -> str:
+def _dhms(s: int) -> str:
     d, rem = divmod(s, 86400)
     h, rem = divmod(rem, 3600)
     m, sec = divmod(rem, 60)
-    if d > 0:
-        return f"{d}d {h:02d}:{m:02d}"
-    return f"{h:02d}:{m:02d}:{sec:02d}"
+    return f"{d}d:{h:02d}h:{m:02d}m:{sec:02d}s"
+
+
+def unit_parts(secs: float | None) -> tuple[str, str, str, str]:
+    """Zero-padded unit strings for DAYS/HRS/MIN/SEC cards."""
+    if secs is None:
+        return ("--", "--", "--", "--")
+    s = int(abs(secs))
+    d, rem = divmod(s, 86400)
+    h, rem = divmod(rem, 3600)
+    m, sec = divmod(rem, 60)
+    return (f"{d:02d}", f"{h:02d}", f"{m:02d}", f"{sec:02d}")
 
 
 # ── Rockets ─────────────────────────────────────────────────────

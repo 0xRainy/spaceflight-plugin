@@ -525,23 +525,24 @@ def parse_hms_to_seconds(text: str) -> int | None:
 
 
 def _fmt_duration(seconds: float, *, precise: bool = False) -> str:
+    """Format as 1d:20h:30m:20s (always includes days for a stable ticking readout)."""
     s = int(abs(seconds))
     days, rem = divmod(s, 86400)
     hours, rem = divmod(rem, 3600)
     mins, secs = divmod(rem, 60)
-    if precise:
-        # Always tick at 1Hz: total hours if multi-day, else classic clock
-        if days > 0:
-            total_h = days * 24 + hours
-            return f"{total_h:02d}:{mins:02d}:{secs:02d}"
-        return f"{hours:02d}:{mins:02d}:{secs:02d}"
-    if days > 0:
-        return f"{days}d {hours:02d}h {mins:02d}m"
-    if hours > 0:
-        return f"{hours:02d}h {mins:02d}m {secs:02d}s"
-    if mins > 0:
-        return f"{mins:02d}m {secs:02d}s"
-    return f"{secs:02d}s"
+    # precise and default both use full d:h:m:s so waybar + TUI stay consistent
+    return f"{days}d:{hours:02d}h:{mins:02d}m:{secs:02d}s"
+
+
+def split_duration(seconds: float | None) -> tuple[int, int, int, int]:
+    """Return (days, hours, mins, secs) for unit-card displays."""
+    if seconds is None:
+        return (0, 0, 0, 0)
+    s = int(abs(seconds))
+    days, rem = divmod(s, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins, secs = divmod(rem, 60)
+    return days, hours, mins, secs
 
 
 def parse_ll2_launch(raw: dict) -> Launch:
