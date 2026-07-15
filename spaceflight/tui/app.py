@@ -61,7 +61,10 @@ class SpaceflightApp:
         self._img_id: int | None = None
         self._img_key: str = ""  # url+geometry of currently shown image
         self._pending_img: dict | None = None
+        self._home_preview: dict | None = None  # live stream frame on HOME
         self._show_images = True
+        self._last_frame_grab = 0.0
+        self._home_stars = art.Starfield(seed=13)
 
     # ── data ────────────────────────────────────────────────
 
@@ -71,8 +74,15 @@ class SpaceflightApp:
             launches, meta = refresh_if_needed(force=force)
             self.launches = launches
             self.meta = meta
-            if meta.get("refresh_error"):
-                self.flash(f"Uplink error: {meta['refresh_error']}")
+            if meta.get("skipped_backoff") or meta.get("ll2_backoff"):
+                # Quiet — rate limit cooldown; keep using cache
+                err = meta.get("refresh_error") or "LL2 cooldown"
+                if force:
+                    self.flash(f"Using cache · {err}", 3.0)
+            elif meta.get("refresh_error"):
+                # Soft: don't scream if we still have data
+                if force or not launches:
+                    self.flash(f"Using cache · {meta['refresh_error']}", 3.5)
             elif meta.get("refreshed"):
                 self.flash(f"Synced · {len(launches)} launches")
             self.apply_filter()
@@ -81,7 +91,7 @@ class SpaceflightApp:
         except Exception as exc:  # noqa: BLE001
             self.launches, self.meta = load_launches()
             self.apply_filter()
-            self.flash(f"Offline cache · {exc}")
+            self.flash(f"Offline cache · {exc}", 3.0)
         finally:
             self.loading = False
             self.need_refresh = True
@@ -251,10 +261,13 @@ class SpaceflightApp:
         # each frame (a=p) — avoids re-upload flicker and footer ghosting.
         if place_img and self._show_images:
             self._pending_img = place_img
-            self._place_path_image(place_img)
+            if place_img.get("kind") == "stream":
+                self._place_stream_frame(place_img)
+            else:
+                self._place_path_image(place_img)
         else:
             self._pending_img = None
-            if not on_path:
+            if not on_path and self.TABS[self.detail_tab][1] != "HOME":
                 self._invalidate_image()
 
         self.last_draw = time.time()
@@ -379,8 +392,7 @@ class SpaceflightApp:
         tab = self.TABS[self.detail_tab][1]
 
         if tab == "HOME":
-            self._draw_home(stdscr, content_y, ix, content_h, inner_w, L)
-            return None
+            return self._draw_home(stdscr, content_y, ix, content_h, inner_w, L)
         if tab == "PATH":
             return self._draw_path(stdscr, content_y, ix, content_h, inner_w, L)
         if tab == "DATA":
@@ -404,46 +416,87 @@ class SpaceflightApp:
         if secs is not None and secs < 0 and abs(secs) < 120:
             sign = "T+"
 
-        # Soft starfield behind content (dim, non-destructive where we write later)
-        if not hasattr(self, "_home_stars"):
-            self._home_stars = art.Starfield(seed=13)
+        # Soft starfield behind content
         self._home_stars.resize(max(1, w), max(1, h))
         for sy, sx, ch in self._home_stars.cells(self.tick):
             if 0 <= sy < h and 0 <= sx < w and ch.strip():
-                # Don't paint over edges heavily
                 put(stdscr, y + sy, x + sx, ch, T.pair(T.P_DIM, dim=True))
+
+        # Live stream frame? reserve right column when available
+        preview_spec = None
+        show_preview = (
+            self._show_images
+            and (L.webcast_live or L.is_live_or_inflight())
+            and L.primary_stream() is not None
+            and w >= 60
+            and h >= 12
+        )
+        preview_w = 0
+        content_w = w
+        if show_preview:
+            preview_w = max(22, min(40, w // 3))
+            content_w = w - preview_w - 1
+            stream = L.primary_stream()
+            assert stream is not None
+            from ..stream_frame import frame_path
+
+            fp = frame_path(L.id, stream.url)
+            self._maybe_grab_stream_frame(L.id, stream.url)
+            if fp.exists() and fp.stat().st_size > 500:
+                preview_spec = {
+                    "path": str(fp),
+                    "col": x + content_w + 1,
+                    "row": y + 2,
+                    "cols": preview_w - 1,
+                    "rows": max(6, min(h - 4, 16)),
+                    "kind": "stream",
+                }
+                # Label above image area
+                fill(
+                    stdscr, y + 1, x + content_w + 1,
+                    clip("● LIVE PREVIEW · 1f/min", preview_w - 1),
+                    preview_w - 1,
+                    T.pair(T.P_LIVE, bold=True),
+                )
+            else:
+                fill(
+                    stdscr, y + 2, x + content_w + 1,
+                    clip("grabbing frame…", preview_w - 1),
+                    preview_w - 1,
+                    T.pair(T.P_DIM),
+                )
 
         # ── Title strip ─────────────────────────────────────
         pulse = art.pulse_prefix(self.tick, L.webcast_live)
         live = "  ● LIVE" if L.webcast_live else ""
-        title = f"{pulse}  {L.short_name()}{live}"
-        fill(stdscr, y, x, clip(title, w), w, T.pair(sp, bold=True))
+        test = "  [TEST]" if L.is_test else ""
+        title = f"{pulse}  {L.short_name()}{live}{test}"
+        fill(stdscr, y, x, clip(title, content_w), content_w, T.pair(sp, bold=True))
 
         # Scrolling provider · vehicle · pad marquee
         marquee = f"  {L.provider}  ·  {L.vehicle_name()}  ·  {L.pad or L.location}  ·  "
         if len(marquee) > 4:
             off = (self.tick // 2) % max(1, len(marquee))
-            scrolled = (marquee + marquee)[off : off + w]
-            fill(stdscr, y + 1, x, scrolled[:w], w, T.pair(T.P_MUTED))
+            scrolled = (marquee + marquee)[off : off + content_w]
+            fill(stdscr, y + 1, x, scrolled[:content_w], content_w, T.pair(T.P_MUTED))
 
         # ── Unit cards: DAYS | HRS | MIN | SEC ───────────────
         units = art.unit_parts(secs)
         labels = ("DAYS", "HRS", "MIN", "SEC")
-        # Color: seconds pulse near T-0
         near = secs is not None and 0 <= secs < 600
         past = secs is not None and secs < 0
         cd_pair = T.P_HOLD if L.is_hold() else (
             T.P_LIVE if (L.webcast_live or near or past) else T.P_COUNTDOWN
         )
-        # Flash seconds digit color every other tick when T- < 1h
         sec_pair = T.P_LIVE if (near and (self.tick // 2) % 2 == 0) else cd_pair
 
-        # Layout: optional rocket on left if wide enough
+        # Rocket only when no live preview (avoid crowding)
         rocket = art.rocket_for(L.vehicle.full_name or L.name)
-        show_rocket = w >= 52 and h >= 14
+        show_rocket = content_w >= 52 and h >= 14 and not show_preview
         rk_w = max(len(r) for r in rocket) if show_rocket else 0
         cards_x = x + (rk_w + 2 if show_rocket else 0)
-        cards_w = w - (rk_w + 2 if show_rocket else 0)
+        cards_w = content_w - (rk_w + 2 if show_rocket else 0)
+        w = content_w  # remaining layout uses content width
 
         # Draw rocket + flame
         if show_rocket:
@@ -659,6 +712,8 @@ class SpaceflightApp:
                 T.pair(T.P_LIVE if L.webcast_live else T.P_ACCENT, bold=True),
             )
 
+        return preview_spec
+
     def _draw_path(self, stdscr, y: int, x: int, h: int, w: int, L: Launch) -> dict | None:
         """
         PATH: official trajectory image + horizontal stage status bar.
@@ -796,15 +851,14 @@ class SpaceflightApp:
         }
 
     def _place_path_image(self, spec: dict) -> None:
-        """Place after curses refresh. Transmit once; re-place cheaply."""
+        """Place trajectory infographic after curses refresh."""
         url = spec["url"]
         path = gfx.ensure_display_png(url) if hasattr(gfx, "ensure_display_png") else gfx.ensure_cached(url)
         if not path:
-            # Show a one-line error in flash occasionally
             if self.tick % 40 == 0:
                 self.flash("Could not load trajectory image", 2.0)
             return
-        key = f"{url}|{spec['col']}|{spec['row']}|{spec['cols']}|{spec['rows']}"
+        key = f"path|{url}|{spec['col']}|{spec['row']}|{spec['cols']}|{spec['rows']}"
         placed = gfx.place_image(
             path,
             col=spec["col"],
@@ -812,6 +866,62 @@ class SpaceflightApp:
             cols=spec["cols"],
             rows=spec["rows"],
             image_id=gfx.PATH_IMAGE_ID,
+        )
+        if placed is not None:
+            self._img_id = placed
+            self._img_key = key
+
+    def _maybe_grab_stream_frame(self, launch_id: str, url: str) -> None:
+        """Throttle to ~1/min; run yt-dlp+ffmpeg off the UI thread."""
+        import threading
+
+        from ..stream_frame import frame_is_fresh, frame_path, grab_stream_frame
+
+        path = frame_path(launch_id, url)
+        if frame_is_fresh(path):
+            return
+        now = time.time()
+        if now - self._last_frame_grab < 5:
+            return
+        self._last_frame_grab = now
+
+        def work() -> None:
+            try:
+                grab_stream_frame(launch_id, url)
+            except Exception:  # noqa: BLE001
+                pass
+
+        threading.Thread(target=work, daemon=True, name="sf-frame").start()
+
+    def _place_stream_frame(self, spec: dict) -> None:
+        """Place live stream JPEG frame on HOME."""
+        from pathlib import Path
+
+        path = Path(spec["path"])
+        if not path.exists():
+            return
+        # Convert jpeg → display png once for Kitty reliability
+        key = f"stream|{path}|{path.stat().st_mtime}|{spec['col']}|{spec['row']}|{spec['cols']}x{spec['rows']}"
+        png = path.with_suffix(".display.png")
+        if not png.exists() or png.stat().st_mtime < path.stat().st_mtime:
+            try:
+                from PIL import Image
+
+                img = Image.open(path).convert("RGB")
+                max_w = 960
+                if img.width > max_w:
+                    r = max_w / img.width
+                    img = img.resize((max_w, max(1, int(img.height * r))), Image.Resampling.LANCZOS)
+                img.save(png, format="PNG", optimize=True)
+            except Exception:
+                png = path  # try jpeg directly
+        placed = gfx.place_image(
+            png,
+            col=spec["col"],
+            row=spec["row"],
+            cols=spec["cols"],
+            rows=spec["rows"],
+            image_id=43,  # distinct from PATH id
         )
         if placed is not None:
             self._img_id = placed

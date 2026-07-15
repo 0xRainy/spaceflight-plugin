@@ -35,11 +35,25 @@ USER_AGENT = f"Spaceflight/{VERSION} (+https://github.com/local/spaceflight; per
 # RocketLaunch.Live free endpoint (next 5 launches + weather)
 RLL_NEXT = "https://fdo.rocketlaunch.live/json/launches/next/5"
 
-# Fetch policy (stay under free rate limits)
-DEFAULT_FETCH_LIMIT = 30
-MIN_FETCH_INTERVAL_SEC = 300  # 5 minutes between network pulls
+# Fetch policy — LL2 free tier ≈ 15 req/hour → stay ≤ 1 req / 5 min
+DEFAULT_FETCH_LIMIT = 25  # single page only (never multi-page on free tier)
+MIN_FETCH_INTERVAL_SEC = 360  # 6 minutes between LL2 pulls
 DAEMON_POLL_SEC = 60  # wake every minute to check countdowns / maybe refresh
-CACHE_STALE_SEC = 600  # consider cache stale after 10 min
+CACHE_STALE_SEC = 720  # consider cache stale after 12 min
+LL2_BACKOFF_SEC = 1800  # after 429, cool down 30 minutes
+RATE_LIMIT_STATE = STATE_DIR / "ll2_backoff.json"
+
+# Live stream frame grab (HOME preview when webcast is live)
+STREAM_FRAME_INTERVAL_SEC = 60
+STREAM_FRAME_DIR = CACHE_DIR / "stream_frames"
+
+# Synthetic looping test flight (T-10m → T+10m → reset)
+TEST_FLIGHT_ID = "spaceflight-test-loop"
+TEST_FLIGHT_PRE_SEC = 10 * 60
+TEST_FLIGHT_POST_SEC = 10 * 60
+TEST_FLIGHT_STATE = STATE_DIR / "test_flight.json"
+# Public video used so frame-grab can be exercised (any yt-dlp URL works)
+TEST_FLIGHT_STREAM = "https://www.youtube.com/watch?v=86YLFOog4GM"  # Earth from ISS
 
 # Desktop countdown thresholds (seconds before NET)
 NOTIFY_THRESHOLDS = (

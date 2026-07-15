@@ -44,6 +44,8 @@ _PROVIDER_CODES: dict[str, str] = {
     "astra": "ASTRA",
     "virgin galactic": "VG",
     "virgin orbit": "VO",
+    "spaceflight test": "TEST",
+    "spaceflight": "TEST",
 }
 
 

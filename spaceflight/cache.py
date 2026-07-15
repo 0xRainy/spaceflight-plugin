@@ -49,33 +49,44 @@ def save_launches(launches: list[Launch], meta: dict[str, Any] | None = None) ->
 
 
 def load_launches() -> tuple[list[Launch], dict[str, Any]]:
-    """Return (launches, meta). Empty list if no cache."""
+    """Return (launches, meta). Always injects the looping test flight."""
     path = config.LAUNCHES_CACHE
     if not path.exists():
-        return [], {"fetched_at": None, "age_sec": None, "missing": True}
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return [], {"fetched_at": None, "age_sec": None, "corrupt": True}
-
-    launches = [Launch.from_dict(x) for x in data.get("launches") or []]
-    fetched = data.get("fetched_at")
-    age = None
-    if fetched:
+        launches: list[Launch] = []
+        meta: dict[str, Any] = {"fetched_at": None, "age_sec": None, "missing": True}
+    else:
         try:
-            ft = datetime.fromisoformat(fetched.replace("Z", "+00:00"))
-            age = (datetime.now(timezone.utc) - ft).total_seconds()
-        except ValueError:
-            age = None
-    meta = {
-        "fetched_at": fetched,
-        "age_sec": age,
-        "count": data.get("count"),
-        "source": data.get("source"),
-        "meta": data.get("meta") or {},
-        "path": str(path),
-    }
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return [], {"fetched_at": None, "age_sec": None, "corrupt": True}
+
+        launches = [Launch.from_dict(x) for x in data.get("launches") or []]
+        # Never persist test flights on disk; strip if any slipped in
+        launches = [L for L in launches if not L.is_test and L.id != config.TEST_FLIGHT_ID]
+        fetched = data.get("fetched_at")
+        age = None
+        if fetched:
+            try:
+                ft = datetime.fromisoformat(fetched.replace("Z", "+00:00"))
+                age = (datetime.now(timezone.utc) - ft).total_seconds()
+            except ValueError:
+                age = None
+        meta = {
+            "fetched_at": fetched,
+            "age_sec": age,
+            "count": data.get("count"),
+            "source": data.get("source"),
+            "meta": data.get("meta") or {},
+            "path": str(path),
+        }
+
+    try:
+        from .test_flight import inject_test_flight
+
+        launches = inject_test_flight(launches)
+    except Exception:  # noqa: BLE001
+        pass
     return launches, meta
 
 

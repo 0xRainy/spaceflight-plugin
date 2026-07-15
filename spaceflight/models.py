@@ -304,6 +304,7 @@ class Launch:
     mission_brief: MissionBrief | None = None
     timeline: list[TimelineEvent] = field(default_factory=list)  # combined / LL2
     info_urls: list[str] = field(default_factory=list)
+    is_test: bool = False  # synthetic loop flight — no phone notifications
 
     # ── derived ──────────────────────────────────────────────
 
@@ -456,6 +457,7 @@ class Launch:
             "mission_brief": self.mission_brief.to_dict() if self.mission_brief else None,
             "timeline": [e.to_dict() for e in self.timeline],
             "info_urls": self.info_urls,
+            "is_test": self.is_test,
         }
 
     @classmethod
@@ -502,6 +504,7 @@ class Launch:
             mission_brief=MissionBrief.from_dict(brief) if brief else None,
             timeline=[TimelineEvent.from_dict(e) for e in (d.get("timeline") or [])],
             info_urls=list(d.get("info_urls") or []),
+            is_test=bool(d.get("is_test")),
         )
 
 

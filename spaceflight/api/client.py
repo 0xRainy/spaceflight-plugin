@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 import requests
 
 from .. import config
-from ..cache import can_fetch, load_launches, save_launches
+from ..cache import can_fetch, ensure_dirs, load_launches, save_launches
 from ..models import Launch, WeatherInfo, parse_ll2_launch
+from ..test_flight import inject_test_flight
 
 log = logging.getLogger("spaceflight.api")
 
@@ -27,52 +30,86 @@ def _session() -> requests.Session:
     return s
 
 
+# ── LL2 rate-limit cooldown ─────────────────────────────────
+
+def _backoff_until() -> float:
+    path = config.RATE_LIMIT_STATE
+    if not path.exists():
+        return 0.0
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return float(data.get("until", 0))
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        return 0.0
+
+
+def _set_backoff(seconds: float = config.LL2_BACKOFF_SEC) -> None:
+    ensure_dirs()
+    until = time.time() + seconds
+    config.RATE_LIMIT_STATE.write_text(
+        json.dumps(
+            {
+                "until": until,
+                "set_at": datetime.now(timezone.utc).isoformat(),
+                "seconds": seconds,
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    log.warning("LL2 backoff until %s (%.0fs)", datetime.fromtimestamp(until, tz=timezone.utc).isoformat(), seconds)
+
+
+def _clear_backoff() -> None:
+    try:
+        config.RATE_LIMIT_STATE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def ll2_in_backoff() -> bool:
+    return time.time() < _backoff_until()
+
+
 def fetch_ll2_upcoming(limit: int = config.DEFAULT_FETCH_LIMIT) -> list[Launch]:
-    """Pull detailed upcoming launches from Launch Library 2."""
+    """
+    Pull detailed upcoming launches from Launch Library 2.
+
+    Free tier ≈ 15 req/hour — always use a SINGLE request (no pagination).
+    """
+    if ll2_in_backoff():
+        raise RuntimeError(
+            f"LL2 cooling down after rate limit "
+            f"({int(_backoff_until() - time.time())}s left). Using cache."
+        )
+
     session = _session()
+    # One shot only — never walk `next` on free tier
+    page_size = min(max(1, limit), 100)
+    params = {
+        "limit": page_size,
+        "mode": "detailed",
+        "ordering": "net",
+    }
+    url = config.LL2_UPCOMING
+    log.info("GET %s params=%s", url, params)
+    resp = session.get(url, params=params, timeout=30)
+    if resp.status_code == 429:
+        _set_backoff(config.LL2_BACKOFF_SEC)
+        raise RuntimeError("Launch Library 2 rate limit (429) — backing off 30m, using cache.")
+    resp.raise_for_status()
+    _clear_backoff()
+    data = resp.json()
     launches: list[Launch] = []
-    offset = 0
-    page_size = min(limit, 20)  # LL2 max per page often 100; keep moderate
-
-    while len(launches) < limit:
-        params = {
-            "limit": page_size,
-            "offset": offset,
-            "mode": "detailed",
-            "ordering": "net",
-        }
-        url = config.LL2_UPCOMING
-        log.info("GET %s params=%s", url, params)
-        resp = session.get(url, params=params, timeout=30)
-        if resp.status_code == 429:
-            raise RuntimeError("Launch Library 2 rate limit (429). Try again later.")
-        resp.raise_for_status()
-        data = resp.json()
-        results = data.get("results") or []
-        if not results:
-            break
-        for raw in results:
-            try:
-                launches.append(parse_ll2_launch(raw))
-            except Exception as exc:  # noqa: BLE001 — keep one bad record from killing fetch
-                log.warning("Failed to parse launch: %s", exc)
-        if not data.get("next"):
-            break
-        offset += len(results)
-        if len(results) < page_size:
-            break
-        # Free tier: prefer single page when possible
-        if offset >= limit:
-            break
-
+    for raw in data.get("results") or []:
+        try:
+            launches.append(parse_ll2_launch(raw))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Failed to parse launch: %s", exc)
     return launches[:limit]
 
 
 def fetch_rll_weather() -> dict[str, WeatherInfo]:
-    """
-    RocketLaunch.Live free next-5 endpoint.
-    Returns weather keyed by normalized mission/vehicle fingerprints for merging.
-    """
     session = _session()
     try:
         resp = session.get(config.RLL_NEXT, timeout=20)
@@ -92,7 +129,6 @@ def fetch_rll_weather() -> dict[str, WeatherInfo]:
             condition=item.get("weather_condition") or "",
             wind_mph=str(item.get("weather_wind_mph") or ""),
         )
-        # Key by t0 + vehicle for matching
         t0 = item.get("t0") or ""
         vehicle = (item.get("vehicle") or {}).get("name") or ""
         mission = item.get("name") or ""
@@ -103,7 +139,6 @@ def fetch_rll_weather() -> dict[str, WeatherInfo]:
 
 def _match_keys(t0: str, vehicle: str, mission: str) -> list[str]:
     keys = []
-    # Normalize date to YYYY-MM-DD
     day = ""
     if t0:
         day = t0[:10]
@@ -148,34 +183,37 @@ def fetch_all(limit: int = config.DEFAULT_FETCH_LIMIT, include_weather: bool = T
         except Exception as exc:  # noqa: BLE001
             log.warning("Weather merge failed: %s", exc)
 
-    # SpaceX CMS: countdown / flight timelines + infographics (no AI)
     providers = ["ll.thespacedevs.com", "rocketlaunch.live"]
     try:
         from .spacex import enrich_launches
 
-        n = enrich_launches(launches, max_missions=10)
+        n = enrich_launches(launches, max_missions=8)
         if n:
             providers.append("content.spacex.com")
             log.info("SpaceX enriched %d launches", n)
     except Exception as exc:  # noqa: BLE001
         log.warning("SpaceX enrich failed: %s", exc)
 
-    # Sort by NET ascending (None last)
     def sort_key(L: Launch) -> tuple:
         if L.net is None:
             return (1, datetime.max.replace(tzinfo=timezone.utc))
         return (0, L.net)
 
     launches.sort(key=sort_key)
+    # Persist without the synthetic test flight (re-injected on load)
     save_launches(
-        launches,
+        [L for L in launches if not L.is_test],
         meta={
             "fetched_utc": datetime.now(timezone.utc).isoformat(),
             "limit": limit,
             "providers": providers,
         },
     )
-    return launches
+    return inject_test_flight(launches)
+
+
+def _with_test(launches: list[Launch]) -> list[Launch]:
+    return inject_test_flight(launches)
 
 
 def refresh_if_needed(
@@ -184,33 +222,45 @@ def refresh_if_needed(
     limit: int = config.DEFAULT_FETCH_LIMIT,
 ) -> tuple[list[Launch], dict[str, Any]]:
     """
-    Return launches from cache, optionally refreshing from network.
-    Returns (launches, meta) where meta includes refresh info.
+    Return launches from cache (+ test flight), optionally refreshing.
+    On 429 / backoff: never raise if cache exists — soft error only.
     """
     launches, meta = load_launches()
     meta = dict(meta)
     meta["refreshed"] = False
     meta["refresh_error"] = None
+    meta["ll2_backoff"] = ll2_in_backoff()
+
+    # Hard stop during backoff — never hit LL2
+    if ll2_in_backoff():
+        left = int(_backoff_until() - time.time())
+        meta["refresh_error"] = f"LL2 rate-limit cooldown ({left // 60}m left)"
+        meta["skipped_backoff"] = True
+        return _with_test(launches), meta
 
     need = force or not launches or can_fetch(min_interval)
-    # If force but rate-limited, still try if cache missing
     if force and not can_fetch(min_interval) and launches:
-        # Allow force only if truly stale or user insisted with empty? soft force when age > 60s
         age = meta.get("age_sec")
-        if age is not None and age < 60:
+        if age is not None and age < 90:
             meta["skipped_rate_limit"] = True
-            return launches, meta
+            return _with_test(launches), meta
 
     if not need:
-        return launches, meta
+        return _with_test(launches), meta
 
     try:
         launches = fetch_all(limit=limit)
         launches, meta = load_launches()
+        meta = dict(meta)
         meta["refreshed"] = True
+        meta["refresh_error"] = None
+        meta["ll2_backoff"] = False
     except Exception as exc:  # noqa: BLE001
         log.error("Refresh failed: %s", exc)
+        # Soft error — never wipe the TUI; cache stays valid
         meta["refresh_error"] = str(exc)
+        meta["ll2_backoff"] = ll2_in_backoff()
         if not launches:
+            # Only hard-fail when we have nothing at all
             raise
-    return launches, meta
+    return _with_test(launches), meta

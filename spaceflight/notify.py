@@ -228,8 +228,11 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
         if secs is None:
             continue
 
-        # Webcast live (desktop)
-        if L.webcast_live:
+        # Synthetic test flight: never phone; skip chatty desktop stage/live spam
+        skip_phone = bool(L.is_test) or L.id == config.TEST_FLIGHT_ID
+
+        # Webcast live (desktop) — skip test flight
+        if L.webcast_live and not skip_phone:
             key = f"{L.id}:live"
             if key not in sent:
                 send_desktop(
@@ -244,7 +247,7 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                 fired.append(key)
 
         # Classic T-minus thresholds (desktop + phone)
-        if secs >= 0:
+        if secs >= 0 and not skip_phone:
             for threshold, label in config.NOTIFY_THRESHOLDS:
                 if secs > threshold:
                     continue
@@ -281,7 +284,7 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                 sent[key] = now.isoformat()
                 fired.append(key)
 
-            # Phone pushes: T-24h / T-1h / T-10m (independent keys)
+            # Phone pushes: T-24h / T-1h / T-10m (never for test flight)
             if settings.phone_enabled:
                 for threshold, label in config.PHONE_NOTIFY_THRESHOLDS:
                     if secs > threshold:
@@ -316,7 +319,9 @@ def check_and_notify(launches: list[Launch], now: datetime | None = None) -> lis
                         # Don't mark sent on failure — retry next poll
                         pass
 
-        # Stage events (desktop only — too chatty for phone)
+        # Stage events (desktop only — skip synthetic test spam)
+        if L.is_test:
+            continue
         current_rel = -secs
         for event in L.stage_events():
             if current_rel < event.relative_sec:
