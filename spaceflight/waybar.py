@@ -276,16 +276,43 @@ def _stage_track(L: Launch, now: datetime, width: int = 28) -> list[str]:
     return lines
 
 
+def _stage_snippet(L: Launch, now: datetime, max_len: int = 22) -> str:
+    """Short stage label for the bar when within T-10m / in-flight."""
+    cur = L.current_stage(now)
+    if not cur:
+        return ""
+    desc = (cur.description or "").strip()
+    # Prefer short description over raw T± stamp for bar density
+    if desc:
+        return _short(desc, max_len)
+    return cur.label_t()
+
+
 def _bar_text(featured: Launch | None, now: datetime) -> str:
-    """Compact label: 🚀  SPCX  T-44:06:56"""
+    """
+    Compact label — always includes countdown:
+      🚀  SPCX  T-0d:00h:09m:12s
+      🚀  TEST  T+0d:00h:01m:05s  ·  Max Q
+    """
     if featured is None:
         return "🚀  —"
     prov = provider_abbr(featured)
-    if featured.webcast_live:
-        return f"🚀  {prov}  LIVE"
     cd = featured.countdown_label(now, precise=True)
-    # Keep rocket emoji; glyph only for live state above
-    return f"🚀  {prov}  {cd}"
+    parts = ["🚀", prov, cd]
+
+    # LIVE marker without dropping the countdown
+    if featured.webcast_live:
+        parts.append("LIVE")
+
+    # Within T-10m (or post-liftoff): show current stage snippet
+    secs = featured.seconds_to_net(now)
+    if secs is not None and secs <= 10 * 60:
+        stage = _stage_snippet(featured, now, max_len=20)
+        if stage:
+            parts.append("·")
+            parts.append(stage)
+
+    return "  ".join(parts)
 
 
 def _tooltip(launches: list[Launch], featured: Launch | None, meta: dict, now: datetime) -> str:
