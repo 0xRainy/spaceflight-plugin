@@ -1,4 +1,7 @@
-"""Waybar custom module: JSON text + hover tooltip of upcoming launches."""
+"""
+Waybar module — matches the v0.4 TUI design language
+(Tokyo Night palette, btop/lazygit clarity, soft status glyphs).
+"""
 
 from __future__ import annotations
 
@@ -28,30 +31,33 @@ def _status_class(L: Launch) -> str:
     return "pending"
 
 
-def _icon(L: Launch | None) -> str:
+def _glyph(L: Launch | None) -> str:
+    """Same semantic marks as the TUI queue."""
     if L is None:
-        return "🚀"
-    c = _status_class(L)
-    return {
-        "live": "🔴",
-        "hold": "⏸",
-        "go": "🚀",
-        "tbd": "❓",
-        "success": "✅",
-        "failure": "❌",
-        "pending": "🚀",
-    }.get(c, "🚀")
+        return "◆"
+    if L.webcast_live or L.is_live_or_inflight():
+        return "●"
+    if L.is_hold():
+        return "⏸"
+    if L.is_go():
+        return "◆"
+    if L.is_tbd():
+        return "○"
+    abb = (L.status_abbrev or "").lower()
+    if abb == "success":
+        return "✓"
+    if "fail" in abb:
+        return "✗"
+    return "·"
 
 
 def _pick_featured(launches: list[Launch], now: datetime) -> Launch | None:
     upcoming = [L for L in launches if L.is_upcoming(now)]
     if not upcoming:
         return None
-    # Prefer live / in-flight
     for L in upcoming:
         if L.webcast_live or L.is_live_or_inflight():
             return L
-    # Prefer soonest with known NET
     with_net = [L for L in upcoming if L.net is not None]
     if with_net:
         with_net.sort(key=lambda L: L.net)  # type: ignore[arg-type, return-value]
@@ -59,83 +65,131 @@ def _pick_featured(launches: list[Launch], now: datetime) -> Launch | None:
     return upcoming[0]
 
 
+def _short(s: str, n: int = 28) -> str:
+    s = s or ""
+    if len(s) <= n:
+        return s
+    return s[: n - 1] + "…"
+
+
+def _bar_text(featured: Launch | None, now: datetime) -> str:
+    """Compact center-module label."""
+    if featured is None:
+        return "◆  —"
+    g = _glyph(featured)
+    if featured.webcast_live:
+        return f"●  LIVE  {_short(featured.short_name(), 16)}"
+    if featured.is_live_or_inflight():
+        cd = featured.countdown_label(now, precise=True)
+        return f"●  {cd}"
+    cd = featured.countdown_label(now, precise=True)
+    # "◆  T-44:18:07" — clean monospaced countdown
+    return f"{g}  {cd}"
+
+
+def _tooltip(launches: list[Launch], featured: Launch | None, meta: dict, now: datetime) -> str:
+    """
+    Hover card — soft panel chrome, same density as the TUI queue.
+    Waybar tooltips accept plain text (and often Pango); keep it plain + unicode.
+    """
+    lines: list[str] = []
+    lines.append("  SPACEFLIGHT")
+    lines.append("  ─────────────────────────────")
+
+    if featured is None:
+        lines.append("  No upcoming launches in cache")
+        lines.append("  Run: spaceflight refresh")
+        return "\n".join(lines)
+
+    # Featured block
+    g = _glyph(featured)
+    cd = featured.countdown_label(now, precise=True)
+    st = featured.status_abbrev or featured.status or "?"
+    lines.append(f"  {g}  {cd}   {st}")
+    lines.append(f"     {featured.vehicle_name()}")
+    lines.append(f"     {featured.short_name()}")
+    loc = ", ".join(p for p in (featured.pad, featured.location) if p) or "—"
+    lines.append(f"     {loc}")
+    if featured.net:
+        local = featured.net.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+        lines.append(f"     NET  {local}")
+    if featured.probability is not None:
+        lines.append(f"     Wx go  {featured.probability}%")
+    stream = featured.primary_stream()
+    if stream:
+        lines.append(f"     ▶  {_short(stream.title or 'Watch', 36)}")
+
+    # Next launches
+    show = [L for L in launches if L.is_upcoming(now) and L is not featured][:6]
+    if show:
+        lines.append("")
+        lines.append("  NEXT")
+        lines.append("  ─────────────────────────────")
+        for L in show:
+            mark = _glyph(L)
+            cd = L.countdown_label(now, precise=True)
+            name = _short(L.short_name(), 22)
+            abb = (L.status_abbrev or "?")[:6]
+            lines.append(f"  {mark}  {cd:11}  {abb:6}  {name}")
+
+    # Stage peek for featured
+    nxt = featured.next_stage(now)
+    cur = featured.current_stage(now)
+    if cur or nxt:
+        lines.append("")
+        lines.append("  STAGE")
+        lines.append("  ─────────────────────────────")
+        if cur:
+            lines.append(f"  now  {cur.label_t()}  {_short(cur.description, 34)}")
+        if nxt:
+            lines.append(f"  nxt  {nxt.label_t()}  {_short(nxt.description, 34)}")
+
+    age = meta.get("age_sec") if meta else None
+    lines.append("")
+    if age is not None:
+        if age < 90:
+            age_s = f"{int(age)}s"
+        elif age < 3600:
+            age_s = f"{int(age // 60)}m"
+        else:
+            age_s = f"{age / 3600:.1f}h"
+        lines.append(f"  data {age_s}  ·  click → TUI")
+    else:
+        lines.append("  click → TUI  ·  right-click refresh")
+
+    return "\n".join(lines)
+
+
 def build_waybar_payload(launches: list[Launch] | None = None) -> dict:
     now = datetime.now(timezone.utc)
     if launches is None:
         launches, meta = load_launches()
     else:
-        meta = {}
+        _, meta = load_launches()
+        # keep provided list but still want age if possible
+        if not meta:
+            meta = {}
 
     featured = _pick_featured(launches, now)
-    icon = _icon(featured)
+    cls = _status_class(featured) if featured else "unknown"
+    text = _bar_text(featured, now)
+    tooltip = _tooltip(launches, featured, meta, now)
 
-    if featured is None:
-        text = f"{icon} —"
-        tooltip = "No upcoming launches in cache.\nRun: spaceflight refresh"
-        cls = "unknown"
-    else:
-        # precise=True so the bar ticks every second (cache-only, no API hits)
-        cd = featured.countdown_label(now, precise=True)
-        short = featured.short_name()
-        # Keep waybar compact
-        if len(short) > 22:
-            short = short[:20] + "…"
-        text = f"{icon} {cd}"
-        if featured.webcast_live:
-            text = f"🔴 LIVE {short}"
-
-        lines: list[str] = [
-            "═══ SPACEFLIGHT ═══",
-            "",
-        ]
-        # Top N for tooltip
-        show = [L for L in launches if L.is_upcoming(now)][:8]
-        if not show:
-            show = launches[:5]
-        for L in show:
-            mark = "▶" if L is featured else "·"
-            stream = L.primary_stream()
-            stream_hint = "  📺" if stream else ""
-            live = " 🔴" if L.webcast_live else ""
-            net_s = ""
-            if L.net:
-                net_s = L.net.astimezone().strftime("%m/%d %H:%M")
-            lines.append(
-                f"{mark} {L.countdown_label(now, precise=True):12}  {L.status_abbrev or L.status or '?':8}{live}"
-            )
-            lines.append(f"  {L.vehicle_name()} │ {L.short_name()}{stream_hint}")
-            lines.append(f"  {L.provider} · {L.location or L.pad}")
-            if net_s:
-                lines.append(f"  NET {net_s} local")
-            if L.probability is not None:
-                lines.append(f"  Wx go {L.probability}%")
-            lines.append("")
-
-        if featured.streams:
-            lines.append("Streams:")
-            for s in featured.streams[:3]:
-                lines.append(f"  • {s.title or s.publisher}: {s.url}")
-
-        age = meta.get("age_sec") if meta else None
-        if age is not None:
-            lines.append(f"Data age: {int(age)}s")
-
-        tooltip = "\n".join(lines).rstrip()
-        cls = _status_class(featured)
-
-    payload = {
+    payload: dict = {
         "text": text,
         "tooltip": tooltip,
         "class": cls,
         "alt": cls,
         "percentage": 0,
     }
-    # percentage unused but some themes expect it
+
     if featured and featured.seconds_to_net(now) is not None:
         secs = featured.seconds_to_net(now) or 0
-        # Map next 24h into 0-100 for optional bar use
+        # 0–100 over the next 24h (useful if a theme draws a mini bar)
         if 0 < secs < 86400:
             payload["percentage"] = int(max(0, min(100, 100 - (secs / 86400) * 100)))
+        elif secs <= 0:
+            payload["percentage"] = 100
 
     return payload
 
@@ -143,9 +197,7 @@ def build_waybar_payload(launches: list[Launch] | None = None) -> dict:
 def emit_waybar(refresh: bool = False) -> dict:
     """
     Build waybar JSON from cache (default).
-
-    Safe to call every second — network is only touched when refresh=True,
-    and even then rate-limited to ~5 minutes by refresh_if_needed.
+    Safe every second — network only when refresh=True (still rate-limited).
     """
     launches = None
     if refresh:
@@ -154,7 +206,6 @@ def emit_waybar(refresh: bool = False) -> dict:
         except Exception:
             launches = None
     payload = build_waybar_payload(launches)
-    # Don't thrash disk every second — only rewrite if text/tooltip class changed
     try:
         prev = load_waybar()
         if (
