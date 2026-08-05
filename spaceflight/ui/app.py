@@ -316,7 +316,7 @@ class NextApp:
         msg = self.message if time.time() < self.message_until else ""
         C.footer(
             stdscr, h - 1, w,
-            "j/k  1-5  f filter  o stream  i info  c copy  r sync  ^D ll2  q",
+            "j/k  1-5  f filter  o stream  i info  c copy  n stages  r sync  ^D ll2  q",
             message=msg,
         )
         if self.show_ll2:

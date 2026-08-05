@@ -25,6 +25,8 @@ ntfy_token = ""
 
 [desktop]
 enabled = true
+# Timeline stage toasts (MECO, Max-Q, …). Toggle in TUI with 'n'.
+stage_notifications = true
 """
 
 
@@ -34,6 +36,8 @@ class Settings:
     ntfy_server: str = "https://ntfy.sh"
     ntfy_token: str = ""
     desktop_enabled: bool = True
+    # Flight timeline stage toasts (prop load, Max-Q, MECO, …)
+    stage_notifications: bool = True
 
     @property
     def phone_enabled(self) -> bool:
@@ -126,6 +130,12 @@ def load_settings() -> Settings:
     )
     s.ntfy_token = str(phone.get("ntfy_token") or data.get("ntfy_token") or "")
     s.desktop_enabled = bool(desktop.get("enabled", data.get("desktop_enabled", True)))
+    s.stage_notifications = bool(
+        desktop.get(
+            "stage_notifications",
+            data.get("stage_notifications", True),
+        )
+    )
     return _apply_env_overrides(s)
 
 
@@ -160,6 +170,7 @@ def settings_to_toml(s: Settings) -> str:
     server = _toml_escape((s.ntfy_server or "https://ntfy.sh").rstrip("/"))
     token = _toml_escape(s.ntfy_token or "")
     desk = "true" if s.desktop_enabled else "false"
+    stages = "true" if s.stage_notifications else "false"
     return (
         "# Spaceflight user config\n"
         "# ⚠ May contain secrets (ntfy_topic / ntfy_token). Do not commit or share.\n"
@@ -172,6 +183,7 @@ def settings_to_toml(s: Settings) -> str:
         "\n"
         "[desktop]\n"
         f"enabled = {desk}\n"
+        f"stage_notifications = {stages}\n"
     )
 
 

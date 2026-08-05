@@ -18,5 +18,8 @@ ntfy_server = "https://ntfy.sh"
 ntfy_token = ""
 
 [desktop]
-# notify-send alerts (thresholds + stage events)
+# notify-send alerts (T− thresholds, live, hold/scrub)
 enabled = true
+# Timeline stage toasts (prop load, Max-Q, MECO, landing, …).
+# Toggle live in the TUI with:  n
+stage_notifications = true

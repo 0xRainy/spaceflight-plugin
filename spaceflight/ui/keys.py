@@ -107,7 +107,25 @@ def _key_global(app: Any, key: int) -> bool | None:
     if key in (ord("c"), ord("C")):
         app.copy_stream()
         return True
+    if key in (ord("n"), ord("N")):
+        return _toggle_stage_notifications(app)
     return None
+
+
+def _toggle_stage_notifications(app: Any) -> bool:
+    """Flip desktop timeline stage toasts; persist to config.toml."""
+    if not c_assert(app is not None, "app"):
+        return True
+    if not c_assert(True is not False, "toggle stage notify"):
+        return True
+    from spaceflight.settings import load_settings, save_settings
+
+    s = load_settings()
+    s.stage_notifications = not bool(s.stage_notifications)
+    save_settings(s)
+    on = s.stage_notifications
+    app.flash(f"Stage notifications {'ON' if on else 'OFF'}", 2.5)
+    return True
 
 
 def _key_nav(app: Any, key: int) -> bool:

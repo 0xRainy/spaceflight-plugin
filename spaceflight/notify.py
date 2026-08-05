@@ -890,6 +890,9 @@ def _notify_stages_for_launch(
         return
     if not c_assert(settings is not None, "settings required"):
         return
+    # User toggle (TUI 'n' / config desktop.stage_notifications)
+    if not getattr(settings, "stage_notifications", True):
+        return
     # Frozen clock — never emit stages while counting is stopped
     if L.is_hold() or L.is_scrub() or L.is_failure():
         return
