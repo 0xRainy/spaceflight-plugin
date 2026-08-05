@@ -329,8 +329,25 @@ def _paint_news(stdscr, L: Launch, cy: int, ix: int, iw: int, y_bottom: int, new
             news_h -= 1
 
 
+def preview_16x9(avail_w: int, avail_h: int) -> tuple[int, int]:
+    """Largest 16:9 cell box inside avail_w×avail_h (cells ~2× taller than wide)."""
+    if not c_assert(isinstance(avail_w, int) and isinstance(avail_h, int), "dims int"):
+        return 24, 5
+    if not c_assert(avail_w > 0 and avail_h > 0, "dims positive"):
+        return 24, 5
+    # Pixel 16:9 with cell aspect ~1:2 → cols/rows ≈ 32/9
+    cols = max(1, avail_w)
+    rows = max(3, int(round(cols * 9 / 32)))
+    if rows > avail_h:
+        rows = max(3, avail_h)
+        cols = max(1, min(avail_w, int(round(rows * 32 / 9))))
+    cols = min(cols, avail_w)
+    rows = min(rows, avail_h)
+    return max(1, cols), max(1, rows)
+
+
 def dual_pane_spec(app: Any, stdscr, L: Launch, y0: int, h: int, rx: int, rw: int, cy: int) -> dict | None:
-    """Build dual stream|radar image specs with required path keys (or None)."""
+    """Build dual stream|radar image specs (16:9 each; never stretch tall)."""
     if not c_assert(app is not None and L is not None, "app/launch"):
         return None
     if not c_assert(stdscr is not None, "stdscr"):
@@ -346,13 +363,24 @@ def dual_pane_spec(app: Any, stdscr, L: Launch, y0: int, h: int, rx: int, rw: in
     if not show:
         return None
     C.put(stdscr, cy, rx + 2, "live  ·  stream          radar", C.A(C.P_DIM))
-    img_y, img_h = cy + 1, remain - 1
+    img_y = cy + 1
+    max_h = remain - 1
     half = (rw - 5) // 2
-    left_col, right_col = rx + 2, rx + 3 + half
+    pane_cols, pane_rows = preview_16x9(half, max_h)
+    # Center each pane in its half-width column (letterbox leftover height/width)
+    x_pad = max(0, (half - pane_cols) // 2)
+    left_col = rx + 2 + x_pad
+    right_col = rx + 3 + half + x_pad
     stream = L.preferred_stream_for_grab() if hasattr(L, "preferred_stream_for_grab") else L.primary_stream()
-    stream_spec = _stream_spec(app, L, stream, left_col, img_y, half, img_h)
-    radar_spec = _radar_spec(app, L, right_col, img_y, half, img_h)
-    return {"kind": "dual", "stream": stream_spec, "radar": radar_spec}
+    stream_spec = _stream_spec(app, L, stream, left_col, img_y, pane_cols, pane_rows)
+    radar_spec = _radar_spec(app, L, right_col, img_y, pane_cols, pane_rows)
+    return {
+        "kind": "dual",
+        "stream": stream_spec,
+        "radar": radar_spec,
+        "pane_cols": pane_cols,
+        "pane_rows": pane_rows,
+    }
 
 
 def _stream_spec(app: Any, L: Launch, stream: Any, col: int, row: int, cols: int, rows: int) -> dict | None:

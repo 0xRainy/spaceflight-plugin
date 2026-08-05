@@ -527,6 +527,57 @@ class TestDualPaneLogic(unittest.TestCase):
         L.webcast_live = True
         self.assertIsNone(dual_pane_spec(self.app, self.scr, L, 2, 10, 40, 20, 8))
 
+    def test_preview_16x9_fits_and_not_taller_than_budget(self) -> None:
+        from spaceflight.ui.home import preview_16x9
+
+        cols, rows = preview_16x9(48, 80)  # tall budget — must not use all 80 rows
+        self.assertEqual(cols, 48)
+        self.assertLessEqual(rows, 80)
+        # ~16:9 in cell units: rows ≈ cols * 9/32
+        self.assertAlmostEqual(rows, round(48 * 9 / 32), delta=1)
+        # Height-limited: shrink width
+        c2, r2 = preview_16x9(80, 6)
+        self.assertLessEqual(r2, 6)
+        self.assertLessEqual(c2, 80)
+        self.assertGreaterEqual(c2, 1)
+
+    def test_dual_pane_uses_16x9_not_full_height(self) -> None:
+        from spaceflight.ui.home import dual_pane_spec, preview_16x9
+
+        L = self.L
+        L.webcast_live = True
+        if L.primary_stream() is None:
+            self.skipTest("test flight has no stream")
+        # Huge vertical room (h=80) — pane_rows must stay 16:9 of half width
+        y0, h, rx, rw, cy = 2, 80, 40, 70, 8
+        remain = (y0 + h - 2) - cy
+        half = (rw - 5) // 2
+        expect_c, expect_r = preview_16x9(half, remain - 1)
+        with mock.patch("spaceflight.ui.home._stream_spec", return_value={"path": "/tmp/s.jpg", "cols": 1, "rows": 1}):
+            with mock.patch("spaceflight.ui.home._radar_spec", return_value={"path": "/tmp/r.png", "cols": 1, "rows": 1}):
+                # Call real dual_pane but inspect geometry via preview + return meta
+                # Re-implement geometry check by patching to capture args
+                captured: list[tuple] = []
+
+                def cap_stream(app, L, stream, col, row, cols, rows):
+                    captured.append(("s", cols, rows))
+                    return {"path": "/x", "col": col, "row": row, "cols": cols, "rows": rows}
+
+                def cap_radar(app, L, col, row, cols, rows):
+                    captured.append(("r", cols, rows))
+                    return {"path": "/y", "col": col, "row": row, "cols": cols, "rows": rows}
+
+                with mock.patch("spaceflight.ui.home._stream_spec", side_effect=cap_stream):
+                    with mock.patch("spaceflight.ui.home._radar_spec", side_effect=cap_radar):
+                        spec = dual_pane_spec(self.app, self.scr, L, y0, h, rx, rw, cy)
+        self.assertIsNotNone(spec)
+        assert spec is not None
+        self.assertEqual(spec.get("pane_rows"), expect_r)
+        self.assertEqual(spec.get("pane_cols"), expect_c)
+        self.assertLess(expect_r, remain - 1)  # must not fill tall terminal
+        for kind, cols, rows in captured:
+            self.assertEqual((cols, rows), (expect_c, expect_r), msg=kind)
+
 
 class TestModelsStress(unittest.TestCase):
     def test_parse_ll2_minimal_and_fullish(self) -> None:
