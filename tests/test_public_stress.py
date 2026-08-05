@@ -900,11 +900,115 @@ class TestCLISurface(unittest.TestCase):
         self.assertNotIn("spaceflight-classic", r.stdout)
 
 
+class TestScheduleDisplay(unittest.TestCase):
+    def test_net_and_window_formatters(self) -> None:
+        from spaceflight.models import Launch
+
+        net = datetime(2030, 6, 15, 12, 30, 0, tzinfo=timezone.utc)
+        L = Launch(
+            id="sched-1",
+            name="Sched",
+            net=net,
+            window_start=net,
+            window_end=net + timedelta(hours=2, minutes=15),
+            net_precision="Minute",
+        )
+        self.assertIn("UTC", L.net_utc_str())
+        self.assertNotEqual(L.net_local_str(), "NET TBD")
+        self.assertIn("–", L.window_local_str())
+        self.assertIn("2h", L.window_duration_label())
+
+    def test_data_tab_includes_schedule(self) -> None:
+        from spaceflight.test_flight import make_test_launch, set_test_flight_enabled
+        from spaceflight.tui.draw_panels import lines_data
+
+        set_test_flight_enabled(True)
+        L = make_test_launch()
+        texts = [t[0] if isinstance(t, tuple) else str(t) for t in lines_data(L, 72)]
+        blob = "\n".join(texts)
+        self.assertIn("SCHEDULE", blob)
+        self.assertIn("NET local", blob)
+        self.assertIn("NET UTC", blob)
+        self.assertIn("Window", blob)
+
+    def test_home_schedule_paint(self) -> None:
+        _patch_curses()
+        from spaceflight.test_flight import make_test_launch, set_test_flight_enabled
+        from spaceflight.ui import theme as UT
+        from spaceflight.ui.home import _draw_schedule
+
+        UT.init_theme()
+        set_test_flight_enabled(True)
+        L = make_test_launch()
+        scr = CaptureScreen(24, 90)
+        _draw_schedule(scr, L, 2, 2, 80)
+        blob = scr.text()
+        self.assertIn("NET", blob)
+        self.assertIn("UTC", blob)
+        self.assertIn("Window", blob)
+
+
+class TestStageNotifyToggle(unittest.TestCase):
+    """'n' toggles desktop timeline stage toasts without killing T− thresholds."""
+
+    def test_key_n_persists_stage_notifications(self) -> None:
+        from spaceflight.settings import Settings, load_settings, save_settings
+        from spaceflight.ui.app import NextApp
+        from spaceflight.ui.keys import handle_key
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td)
+            with mock.patch("spaceflight.config.CONFIG_DIR", cfg):
+                with mock.patch("spaceflight.settings.DEFAULT_CONFIG", cfg / "config.toml"):
+                    s = Settings()
+                    s.stage_notifications = True
+                    save_settings(s)
+                    app = NextApp()
+                    self.assertTrue(handle_key(app, ord("n")))
+                    self.assertFalse(load_settings().stage_notifications)
+                    self.assertIn("OFF", app.message.upper())
+                    self.assertTrue(handle_key(app, ord("n")))
+                    self.assertTrue(load_settings().stage_notifications)
+                    self.assertIn("ON", app.message.upper())
+                    text = (cfg / "config.toml").read_text(encoding="utf-8")
+                    self.assertIn("stage_notifications", text)
+
+    def test_stages_skipped_when_disabled(self) -> None:
+        from spaceflight.models import Launch, TimelineEvent
+        from spaceflight.notify import _notify_stages_for_launch
+        from spaceflight.settings import Settings
+
+        now = datetime.now(timezone.utc)
+        L = Launch(
+            id="stage-off",
+            name="Stage Off Test",
+            net=now - timedelta(seconds=30),
+            status_abbrev="In Flight",
+            status="In Flight",
+            timeline=[
+                TimelineEvent(relative_sec=0, description="Liftoff", phase="flight", source="test"),
+                TimelineEvent(relative_sec=60, description="Max Q", phase="flight", source="test"),
+            ],
+        )
+        settings = Settings(stage_notifications=False, desktop_enabled=True)
+        sent: dict = {}
+        fired: list[str] = []
+        with mock.patch("spaceflight.notify._notify_stage") as mock_stage:
+            _notify_stages_for_launch(L, -30.0, now, sent, settings, fired)
+            self.assertFalse(mock_stage.called)
+            self.assertEqual(fired, [])
+        settings.stage_notifications = True
+        with mock.patch("spaceflight.notify._notify_stage") as mock_stage:
+            _notify_stages_for_launch(L, -30.0, now, sent, settings, fired)
+            self.assertTrue(mock_stage.called)
+            self.assertTrue(fired)
+
+
 class TestSettingsAndConfig(unittest.TestCase):
     def test_example_has_no_live_secrets(self) -> None:
         ex = (ROOT / "config.example.toml").read_text(encoding="utf-8")
         self.assertNotRegex(ex, r'ntfy_topic\s*=\s*"[^"]{16,}"')
-        self.assertNotIn("ntfy_token = \"tk_", ex)
+        self.assertNotIn('ntfy_token = "tk_', ex)
 
     def test_save_load_roundtrip_isolated(self) -> None:
         from spaceflight.settings import Settings, load_settings, save_settings

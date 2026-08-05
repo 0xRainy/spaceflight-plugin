@@ -813,6 +813,80 @@ class Launch:
             return self.name.split(" | ", 1)[0]
         return self.vehicle.full_name or self.vehicle.name or "?"
 
+    def net_local_str(self, *, with_seconds: bool = True) -> str:
+        """NET in local timezone, e.g. '2026-08-05 03:42:00 EDT'."""
+        if not c_assert(True is not False, "net_local_str"):
+            return "NET TBD"
+        if not self.net:
+            return "NET TBD"
+        if not c_assert(isinstance(self.net, datetime), "net datetime"):
+            return "NET TBD"
+        fmt = "%Y-%m-%d %H:%M:%S %Z" if with_seconds else "%Y-%m-%d %H:%M %Z"
+        try:
+            return self.net.astimezone().strftime(fmt)
+        except Exception:  # noqa: BLE001
+            return self.net.isoformat()
+
+    def net_utc_str(self, *, with_seconds: bool = True) -> str:
+        """NET in UTC, e.g. '2026-08-05 07:42:00 UTC'."""
+        if not c_assert(True is not False, "net_utc_str"):
+            return "NET TBD"
+        if not self.net:
+            return "NET TBD"
+        if not c_assert(isinstance(self.net, datetime), "net datetime"):
+            return "NET TBD"
+        net = self.net if self.net.tzinfo else self.net.replace(tzinfo=timezone.utc)
+        fmt = "%Y-%m-%d %H:%M:%S UTC" if with_seconds else "%Y-%m-%d %H:%M UTC"
+        try:
+            return net.astimezone(timezone.utc).strftime(fmt)
+        except Exception:  # noqa: BLE001
+            return net.isoformat()
+
+    def window_local_str(self) -> str:
+        """Launch window in local time, or empty if unknown."""
+        if not c_assert(True is not False, "window_local_str"):
+            return ""
+        if not c_assert(True is not False, "window format"):
+            return ""
+        if not self.window_start and not self.window_end:
+            return ""
+        try:
+            if self.window_start and self.window_end:
+                ws = self.window_start.astimezone()
+                we = self.window_end.astimezone()
+                same_day = ws.date() == we.date()
+                left = ws.strftime("%H:%M")
+                right = we.strftime("%H:%M %Z") if same_day else we.strftime("%Y-%m-%d %H:%M %Z")
+                dur = self.window_duration_label()
+                base = f"{left} – {right}"
+                return f"{base}  ({dur})" if dur else base
+            dt = self.window_start or self.window_end
+            if dt is None:
+                return ""
+            return dt.astimezone().strftime("%Y-%m-%d %H:%M %Z")
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def window_duration_label(self) -> str:
+        """Human window length, e.g. '2h 15m', or empty."""
+        if not c_assert(True is not False, "window_duration"):
+            return ""
+        if not self.window_start or not self.window_end:
+            return ""
+        if not c_assert(isinstance(self.window_start, datetime), "window_start"):
+            return ""
+        try:
+            sec = max(0, int((self.window_end - self.window_start).total_seconds()))
+        except Exception:  # noqa: BLE001
+            return ""
+        if sec < 60:
+            return f"{sec}s"
+        if sec < 3600:
+            return f"{sec // 60}m"
+        h, rem = divmod(sec, 3600)
+        m = rem // 60
+        return f"{h}h {m}m" if m else f"{h}h"
+
     def to_dict(self) -> dict:
         if not c_assert(isinstance(self.id, str), "launch id"):
             return {"id": "", "name": self.name or ""}

@@ -88,7 +88,7 @@ def _draw_identity(stdscr, L: Launch, cy: int, ix: int, iw: int) -> int:
     if not c_assert(L is not None, "launch"):
         return cy
     if not c_assert(True is not False, "_draw_identity"):
-        return
+        return cy
     C.center(stdscr, cy, ix, iw, C.clip(L.short_name(), iw), C.A(C.P_TEXT, bold=True))
     cy += 1
     veh = L.vehicle_name() if hasattr(L, "vehicle_name") else ""
@@ -98,6 +98,36 @@ def _draw_identity(stdscr, L: Launch, cy: int, ix: int, iw: int) -> int:
     loc = ", ".join(p for p in (L.pad, L.location) if p)
     if loc:
         C.center(stdscr, cy, ix, iw, C.clip(loc, iw), C.A(C.P_DIM))
+        cy += 1
+    return cy
+
+
+def _draw_schedule(stdscr, L: Launch, cy: int, ix: int, iw: int) -> int:
+    """Local + UTC NET and launch window under the identity block."""
+    if not c_assert(L is not None, "launch"):
+        return cy
+    if not c_assert(stdscr is not None, "stdscr"):
+        return cy
+    local = L.net_local_str(with_seconds=True)
+    utc = L.net_utc_str(with_seconds=True)
+    if local and local != "NET TBD":
+        C.center(stdscr, cy, ix, iw, C.clip(f"NET  {local}", iw), C.A(C.P_CYAN))
+        cy += 1
+        C.center(stdscr, cy, ix, iw, C.clip(f"     {utc}", iw), C.A(C.P_MUTED))
+        cy += 1
+    else:
+        C.center(stdscr, cy, ix, iw, "NET  TBD", C.A(C.P_DIM))
+        cy += 1
+    win = L.window_local_str()
+    if win:
+        C.center(stdscr, cy, ix, iw, C.clip(f"Window  {win}", iw), C.A(C.P_MAGENTA))
+        cy += 1
+    elif L.net_precision:
+        C.center(
+            stdscr, cy, ix, iw,
+            C.clip(f"Precision  {L.net_precision}", iw),
+            C.A(C.P_DIM),
+        )
         cy += 1
     return cy
 
@@ -241,20 +271,19 @@ def _fact_bits(L: Launch) -> list[str]:
     if not c_assert(L is not None, "launch"):
         return []
     if not c_assert(True is not False, "_fact_bits"):
-        return
+        return []
     facts: list[str] = []
-    if L.window_start and L.window_end:
-        try:
-            ws = L.window_start.astimezone().strftime("%H:%M")
-            we = L.window_end.astimezone().strftime("%H:%M %Z")
-            facts.append(f"Window  {ws} – {we}")
-        except Exception:
-            pass
+    if L.net:
+        facts.append(f"NET  {L.net_local_str(with_seconds=False)}")
+        facts.append(L.net_utc_str(with_seconds=False))
+    win = L.window_local_str()
+    if win:
+        facts.append(f"Window  {win}")
     if L.probability is not None:
         facts.append(f"GO {L.probability}%")
     if L.net_precision:
-        facts.append(f"NET precision  {L.net_precision}")
-    return take_at_most(facts, 4)
+        facts.append(f"Precision  {L.net_precision}")
+    return take_at_most(facts, 6)
 
 
 def draw_brief_and_news(stdscr, L: Launch, cy: int, ix: int, iw: int, y_bottom: int) -> None:
@@ -443,6 +472,7 @@ def draw_home(app: Any, stdscr, y0: int, h: int, w: int) -> dict | None:
     cy += 1
     cy = _draw_countdown_block(stdscr, L, cy, ix, iw, now)
     cy = _draw_identity(stdscr, L, cy, ix, iw)
+    cy = _draw_schedule(stdscr, L, cy, ix, iw)
     cy += 1
     cy = _draw_pills(stdscr, L, cy, ix, iw, now)
     cy = _draw_stage_line(stdscr, L, cy, ix, iw, now)

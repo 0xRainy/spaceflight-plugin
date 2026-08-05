@@ -566,6 +566,7 @@ def lines_data(
     lines.append((v.full_name or v.name or L.vehicle_name(), T.P_TITLE, True))
     lines.append((f"{v.family}  {v.variant}".strip(), T.P_DIM, False))
     lines.append(("", T.P_TEXT, False))
+    _append_schedule_block(L, lines)
     lines.append(("SPECS", T.P_ACCENT, True))
     specs = (
         ("Length", v.length_m, " m"),
@@ -583,6 +584,44 @@ def lines_data(
         lines.append((f"  {label:<10} {s}{unit}", T.P_TEXT, False))
     _append_boosters_payload(L, width, lines)
     return lines[:MAX_DETAIL_LINES]
+
+
+def _append_schedule_block(L: Launch, lines: list) -> None:
+    """NET local/UTC + launch window for DATA tab."""
+    if not c_assert(L is not None, "launch"):
+        return
+    if not c_assert(isinstance(lines, list), "lines list"):
+        return
+    lines.append(("SCHEDULE", T.P_ACCENT, True))
+    lines.append((f"  NET local  {L.net_local_str()}", T.P_TEXT, True))
+    lines.append((f"  NET UTC    {L.net_utc_str()}", T.P_MUTED, False))
+    win = L.window_local_str()
+    if win:
+        lines.append((f"  Window     {win}", T.P_TEXT, False))
+    elif L.window_start or L.window_end:
+        if L.window_start:
+            lines.append(
+                (
+                    f"  Opens      {L.window_start.astimezone().strftime('%Y-%m-%d %H:%M %Z')}",
+                    T.P_MUTED,
+                    False,
+                )
+            )
+        if L.window_end:
+            lines.append(
+                (
+                    f"  Closes     {L.window_end.astimezone().strftime('%Y-%m-%d %H:%M %Z')}",
+                    T.P_MUTED,
+                    False,
+                )
+            )
+    else:
+        lines.append(("  Window     not published", T.P_DIM, False))
+    if L.net_precision:
+        lines.append((f"  Precision  {L.net_precision}", T.P_DIM, False))
+    if L.probability is not None:
+        lines.append((f"  GO%        {L.probability}%", T.P_MUTED, False))
+    lines.append(("", T.P_TEXT, False))
 
 
 def _append_boosters_payload(L: Launch, width: int, lines: list) -> None:
