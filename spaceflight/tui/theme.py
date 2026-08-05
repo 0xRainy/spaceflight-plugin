@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import curses
 
+from ..p10 import c_assert
+
 # Semantic color pair IDs
 P_TEXT = 1
 P_DIM = 2
@@ -35,20 +37,34 @@ P_WARN = 23
 P_MAGENTA = 24
 P_PILL = 25
 
+_MAX_PAIR_ID = 64
+
 
 def _c(n: int, fallback: int) -> int:
     """Prefer 256-color index when available."""
+    if not c_assert(isinstance(n, int), "n int"):
+        return fallback
+    if not c_assert(isinstance(fallback, int), "fallback int"):
+        return 0
     try:
-        if curses.COLORS >= 256:
+        ncolors = getattr(curses, "COLORS", 8)
+        if ncolors is not None and int(ncolors) >= 256:
             return n
-    except curses.error:
+    except (curses.error, TypeError, ValueError):
         pass
     return fallback
 
 
 def init_theme() -> None:
-    curses.start_color()
-    curses.use_default_colors()
+    if not c_assert(callable(getattr(curses, "start_color", None)), "curses.start_color"):
+        return
+    if not c_assert(callable(getattr(curses, "init_pair", None)), "curses.init_pair"):
+        return
+    try:
+        curses.start_color()
+        curses.use_default_colors()
+    except curses.error:
+        return
 
     # Tokyo Night–ish 256 indices (approximate)
     # https://github.com/enkia/tokyo-night-vscode-theme
@@ -62,6 +78,10 @@ def init_theme() -> None:
     dim = _c(60, curses.COLOR_WHITE)        # #565f89
     muted = _c(103, curses.COLOR_WHITE)     # #a9b1d6
     dark = _c(235, curses.COLOR_BLACK)      # panel bg-ish
+
+    ncolors = int(getattr(curses, "COLORS", 8) or 8)
+    if not c_assert(ncolors >= 0, "colors available"):
+        return
 
     curses.init_pair(P_TEXT, fg, -1)
     curses.init_pair(P_DIM, dim, -1)
@@ -91,6 +111,10 @@ def init_theme() -> None:
 
 
 def pair(pid: int, bold: bool = False, dim: bool = False) -> int:
+    if not c_assert(isinstance(pid, int), "pid int"):
+        return 0
+    if not c_assert(0 < pid < _MAX_PAIR_ID, "pid in range"):
+        return 0
     a = curses.color_pair(pid)
     if bold:
         a |= curses.A_BOLD

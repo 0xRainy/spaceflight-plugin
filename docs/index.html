@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spaceflight CLI — Mission control in your terminal</title>
+    <meta
+      name="description"
+      content="Spaceflight CLI is flashy terminal mission control for rocket launches: live T-countdowns, stage timelines, Waybar or Omarchy Quattro bar, desktop alerts, and optional phone push via ntfy."
+    />
+    <meta name="theme-color" content="#0a0e17" />
+    <meta property="og:title" content="Spaceflight CLI" />
+    <meta
+      property="og:description"
+      content="Mission control energy for rocket launches — TUI, status bar, and phone alerts."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="assets/ui-home.png" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='24' font-size='24'%3E%F0%9F%9A%80%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="css/site.css" />
+  </head>
+  <body>
+    <header class="nav">
+      <a class="nav-brand" href="#top">
+        <span class="nav-mark" aria-hidden="true">🚀</span>
+        Spaceflight CLI
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#screens">Screens</a>
+        <a href="#features">Features</a>
+        <a href="#p10">Power of Ten</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/0xRainy/spaceflight-tui">GitHub</a>
+        <a class="btn btn-primary" href="#install">Get started</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <!-- HERO -->
+      <section class="hero hero-real" aria-label="Introduction">
+        <div class="hero-bg" role="img" aria-label="Rocket launch at night"></div>
+        <div class="hero-inner hero-inner-stack">
+          <div class="hero-copy">
+            <div class="eyebrow">
+              <span class="pulse" aria-hidden="true"></span>
+              Live mission control · Linux TUI
+            </div>
+            <h1>
+              Feel every
+              <span class="grad">T− second</span>
+              before the sky lights up.
+            </h1>
+            <p class="hero-lead">
+              Spaceflight turns your terminal into a launch desk — unit-card countdowns,
+              live stream + weather radar, stage timelines, your status bar (Waybar or Omarchy
+              Quattro), and optional phone pushes so you never miss a window.
+            </p>
+            <div class="hero-cta">
+              <a class="btn btn-primary" href="#install">Install in one minute</a>
+              <a
+                class="btn btn-ghost"
+                href="https://github.com/0xRainy/spaceflight-tui"
+                >View on GitHub →</a
+              >
+            </div>
+            <div class="hero-meta">
+              <span><strong>Python 3.11+</strong> · free public APIs</span>
+              <span><strong>No account</strong> required</span>
+              <span><strong>Power of Ten</strong> compliant</span>
+            </div>
+          </div>
+
+          <!-- Real TUI screenshot -->
+          <figure class="shot-frame shot-hero">
+            <div class="term-bar">
+              <div class="term-dots" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <span class="term-title">spaceflight · next · HOME</span>
+            </div>
+            <img
+              src="assets/ui-home.png"
+              width="1903"
+              height="1063"
+              alt="Spaceflight Next HOME: launch queue, unit-card countdown, live stream and weather radar panes"
+              loading="eager"
+            />
+            <figcaption>Real capture — HOME with live stream + radar during a live countdown window</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <!-- REAL SCREENSHOTS -->
+      <section id="screens" aria-labelledby="screens-title">
+        <div class="section-inner">
+          <div class="section-head">
+            <h2 id="screens-title">The real UI — not a mockup</h2>
+            <p>
+              Captured live from Spaceflight Next on Linux (Ghostty + Kitty graphics). Same
+              Tokyo Night language as the TUI you install — no marketing mockups.
+            </p>
+          </div>
+          <div class="shot-grid">
+            <figure class="shot-card">
+              <img src="assets/ui-home.png" width="1903" height="1063" alt="HOME tab with countdown, queue, stream and radar" loading="lazy" />
+              <figcaption><strong>HOME</strong> — queue, unit-card T−, live stream + radar</figcaption>
+            </figure>
+            <figure class="shot-card">
+              <img src="assets/ui-data.png" width="1903" height="1063" alt="DATA tab with vehicle specs and payload brief" loading="lazy" />
+              <figcaption><strong>DATA</strong> — vehicle specs, payload, mission brief</figcaption>
+            </figure>
+            <figure class="shot-card">
+              <img src="assets/ui-events.png" width="1903" height="1063" alt="EVENTS tab with countdown and flight timeline" loading="lazy" />
+              <figcaption><strong>EVENTS</strong> — countdown milestones + flight timeline</figcaption>
+            </figure>
+            <figure class="shot-card">
+              <img src="assets/ui-ll2.png" width="1903" height="1063" alt="LL2 data modal overlay with schedule feed" loading="lazy" />
+              <figcaption><strong>Ctrl+D</strong> — LL2 pull log &amp; change history</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- POWER OF TEN -->
+      <section class="p10" id="p10" aria-labelledby="p10-title">
+        <div class="section-inner">
+          <div class="section-head">
+            <div class="p10-badge" aria-hidden="true">P10 · NASA / JPL heritage</div>
+            <h2 id="p10-title">What “P10” means here</h2>
+          </div>
+          <div class="p10-intro">
+            <p>
+              <strong style="color: var(--white)">P10</strong> is short for
+              <em>The Power of Ten</em> — Gerard J. Holzmann’s ten rules for writing safety-critical
+              software, developed at NASA/JPL’s Laboratory for Reliable Software. They were written
+              for flight software; Spaceflight applies the same discipline to a launch-tracking TUI.
+            </p>
+            <p>
+              In plain terms: small functions, bounded loops, checked returns, no recursive spaghetti,
+              and a mechanical checker that must stay green. When the site or bar says
+              <strong style="color: var(--cyan)">P10</strong>, it means the code is held to those rules —
+              not that a rocket is at “power level 10.”
+            </p>
+          </div>
+          <div class="p10-grid">
+            <article class="p10-rule">
+              <span class="num">01</span>
+              <div>
+                <h3>Simple control flow</h3>
+                <p>No recursion in core paths. Prefer early returns over deep nesting.</p>
+              </div>
+            </article>
+            <article class="p10-rule">
+              <span class="num">02</span>
+              <div>
+                <h3>Bounded loops</h3>
+                <p>Every loop has a fixed upper bound — except daemon / TUI main loops tagged on purpose.</p>
+              </div>
+            </article>
+            <article class="p10-rule">
+              <span class="num">03–04</span>
+              <div>
+                <h3>Fixed capacities · short functions</h3>
+                <p>Collections use <code style="color: var(--cyan)">MAX_*</code> limits. Functions stay ≤ 60 lines.</p>
+              </div>
+            </article>
+            <article class="p10-rule">
+              <span class="num">05–07</span>
+              <div>
+                <h3>Assert · scope · check returns</h3>
+                <p>Assertions in hot paths, tight scopes, and no silently dropped errors.</p>
+              </div>
+            </article>
+            <article class="p10-rule">
+              <span class="num">08–09</span>
+              <div>
+                <h3>No dynamic eval · clear dispatch</h3>
+                <p>No <code style="color: var(--cyan)">eval</code>/<code style="color: var(--cyan)">exec</code> of untrusted data; explicit control flow over call-table soup.</p>
+              </div>
+            </article>
+            <article class="p10-rule">
+              <span class="num">10</span>
+              <div>
+                <h3>Zero warnings</h3>
+                <p><code style="color: var(--cyan)">ruff</code>, <code style="color: var(--cyan)">mypy</code>, and <code style="color: var(--cyan)">tools/check_p10.py</code> must pass clean.</p>
+              </div>
+            </article>
+          </div>
+          <div class="p10-foot">
+            <span>Enforced by <code>tools/check_p10.py</code> on every package tree.</span>
+            <a href="https://spinroot.com/gerard/pdf/P10.pdf">Holzmann’s original paper (PDF) →</a>
+            <a href="https://github.com/0xRainy/spaceflight-tui/blob/master/docs/POWER_OF_TEN.md">Full Python mapping →</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- FEATURES -->
+      <section id="features" aria-labelledby="features-title">
+        <div class="section-inner">
+          <div class="section-head">
+            <h2 id="features-title">Everything a launch nerd wants — nothing in the way</h2>
+            <p>
+              Built for the hour before T-0: dense when it matters, calm when it doesn’t.
+              Tokyo Night palette. Power-of-Ten disciplined Python.
+            </p>
+          </div>
+          <div class="features">
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">⏱</div>
+              <h3>Countdowns that tick</h3>
+              <p>
+                Wall-clock T− / T+ in the TUI and on your status bar. Hold freezes the clock.
+                Scrub and complete states stay honest — no phantom “still going” flights.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">🛰</div>
+              <h3>Mission-control HOME</h3>
+              <p>
+                Big NET board, dual live stream + weather radar panes, stage rail, and a
+                status bus for HOLD / SCRUB / weather / GO% — all without leaving the terminal.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">📡</div>
+              <h3>Stages, not spam</h3>
+              <p>
+                Desktop alerts for prop load, Max-Q, MECO, landings — when a timeline exists.
+                Phone gets the clean moments: T-24h, T-1h, T-10m, scrub/failure.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">📱</div>
+              <h3>Phone push via ntfy</h3>
+              <p>
+                First-install wizard generates a private topic, walks you through the free
+                ntfy app, and sends a test. Secrets stay in
+                <code>~/.config/spaceflight/</code> — never in the repo.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">📊</div>
+              <h3>Status bar ready</h3>
+              <p>
+                One-second ticks from local cache — zero API hammering. Drop-in
+                <strong>Waybar</strong> module, first-class on
+                <strong>Omarchy Quattro</strong> (Omarchy shell), or wire the same helper into
+                any custom bar that can run a script.
+              </p>
+            </article>
+            <article class="card">
+              <div class="card-icon" aria-hidden="true">🌐</div>
+              <h3>Real data, free APIs</h3>
+              <p>
+                Launch Library 2 schedule, RocketLaunch.Live weather, SpaceX CMS timelines.
+                Smart pull budget respects free-tier rate limits.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- SHOWCASE -->
+      <section class="showcase" id="live" aria-labelledby="live-title">
+        <div class="section-inner">
+          <div class="section-head">
+            <h2 id="live-title">On your bar. On your desk. In your pocket.</h2>
+            <p>
+              Same mission language everywhere — so when the range holds, you feel it in every surface.
+            </p>
+          </div>
+          <div class="showcase-grid">
+            <div>
+              <p style="color: var(--dim); font-size: 0.82rem; margin: 0 0 0.5rem; letter-spacing: 0.06em; text-transform: uppercase">
+                Waybar · Omarchy Quattro
+              </p>
+              <div class="waybar-mock" role="img" aria-label="Status bar module example">
+                <span>🚀</span>
+                <span>SPCX</span>
+                <span class="sep">·</span>
+                <span id="waybar-cd">T-1d:12h:04m:18s</span>
+              </div>
+              <p style="color: var(--muted); font-size: 0.92rem; margin: 0.85rem 0 0">
+                Same countdown JSON for Waybar, Omarchy’s Quattro bar, or any DIY status bar.
+                Finished / DONE missions never steal the slot.
+              </p>
+            </div>
+            <div>
+              <p style="color: var(--dim); font-size: 0.82rem; margin: 0 0 0.5rem; letter-spacing: 0.06em; text-transform: uppercase">
+                Desktop · ntfy phone
+              </p>
+              <div class="notify-card">
+                <div class="app">Spaceflight · T-10m</div>
+                <h4>🚀 Starship · Flight 13 · T-10m</h4>
+                <p>
+                  Vehicle: Starship
+                  Provider: SpaceX
+                  Location: Starbase, TX
+                  NET: local + UTC
+                  Watch: open stream
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="trust">
+            <div class="trust-item">
+              <strong>0</strong>
+              <span>API accounts needed</span>
+            </div>
+            <div class="trust-item">
+              <strong>1s</strong>
+              <span>Bar tick from cache</span>
+            </div>
+            <div class="trust-item">
+              <strong>T-24/1h/10m</strong>
+              <span>Phone milestones</span>
+            </div>
+            <a class="trust-item" href="#p10" style="text-decoration: none; color: inherit">
+              <strong>P10</strong>
+              <span>Power of Ten rules →</span>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- INSTALL -->
+      <section class="install" id="install" aria-labelledby="install-title">
+        <div class="section-inner">
+          <div class="section-head">
+            <h2 id="install-title">From clone to countdown</h2>
+            <p>
+              Linux-first. One script wires the CLI, user daemon, and status-bar helper
+              (Waybar / Omarchy Quattro-ready) — then offers the phone wizard if you want it.
+            </p>
+          </div>
+
+          <div class="install-box">
+            <pre aria-label="Install commands"><span class="cmt"># clone &amp; install</span>
+<span class="cmd">git clone https://github.com/0xRainy/spaceflight-tui.git</span>
+<span class="cmd">cd spaceflight-tui</span>
+<span class="cmd">bash scripts/install.sh</span>
+
+<span class="cmt"># launch mission control</span>
+<span class="cmd">spaceflight</span>
+
+<span class="out"># optional anytime</span>
+<span class="cmd">spaceflight setup</span>          <span class="cmt"># ntfy phone wizard</span>
+<span class="cmd">spaceflight notify-test</span>    <span class="cmt"># desktop smoke test</span></pre>
+            <div class="install-actions">
+              <span class="install-note">Requires Python 3.11+ · systemd user session · optional Waybar or Omarchy Quattro bar</span>
+              <div style="display: flex; gap: 0.5rem; flex-wrap: wrap">
+                <button type="button" class="btn btn-ghost" id="copy-install">Copy install</button>
+                <a class="btn btn-primary" href="https://github.com/0xRainy/spaceflight-tui">Open repository</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="steps">
+            <div class="step">
+              <div class="step-num">01</div>
+              <h3>Install</h3>
+              <p>
+                Symlinks the CLI, enables <code>spaceflight.service</code>, seeds launch cache.
+              </p>
+            </div>
+            <div class="step">
+              <div class="step-num">02</div>
+              <h3>Optional phone setup</h3>
+              <p>
+                Interactive ntfy onboarding generates a private topic and sends a test push.
+              </p>
+            </div>
+            <div class="step">
+              <div class="step-num">03</div>
+              <h3>Watch the clock</h3>
+              <p>
+                Open the TUI, drop the module on Waybar or Omarchy Quattro (or any script-friendly
+                bar), and let the daemon handle the rest.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FINAL CTA -->
+      <section aria-label="Call to action" style="padding-top: 1rem; padding-bottom: 4.5rem">
+        <div class="section-inner" style="text-align: center">
+          <h2 style="color: var(--white); font-size: clamp(1.5rem, 3vw, 2rem); margin: 0 0 0.75rem">
+            Don’t refresh Twitter. Own the countdown.
+          </h2>
+          <p style="color: var(--muted); max-width: 32rem; margin: 0 auto 1.35rem">
+            Free, open source, no telemetry, no keys. Just launches — rendered the way a terminal deserves.
+          </p>
+          <div class="hero-cta" style="justify-content: center">
+            <a class="btn btn-primary" href="https://github.com/0xRainy/spaceflight-tui">Star &amp; clone on GitHub</a>
+            <a class="btn btn-ghost" href="#install">Jump to install</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <strong style="color: var(--text)">Spaceflight CLI</strong>
+          · MIT · by
+          <a href="https://github.com/0xRainy">0xRainy</a>
+          <span class="footer-sep" aria-hidden="true">·</span>
+          <span class="footer-grok">
+            Made with
+            <a href="https://x.ai/grok" rel="noopener">Grok</a>
+          </span>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/0xRainy/spaceflight-tui">Code</a>
+          <a href="https://github.com/0xRainy/spaceflight-tui/blob/master/SECURITY.md">Security</a>
+          <a href="https://github.com/0xRainy/spaceflight-tui/blob/master/docs/POWER_OF_TEN.md">Power of Ten</a>
+          <a href="https://thespacedevs.com/llapi">LL2 data</a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="js/site.js"></script>
+    <script>
+      /* Keep waybar mock in sync with hero countdown */
+      (function () {
+        var src = document.getElementById("live-countdown");
+        var dst = document.getElementById("waybar-cd");
+        if (!src || !dst) return;
+        setInterval(function () {
+          dst.textContent = src.textContent;
+        }, 1000);
+      })();
+    </script>
+  </body>
+</html>

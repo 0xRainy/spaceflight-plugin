@@ -5,10 +5,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/projects/spaceflight/scripts/spaceflight daemon
+ExecStart=%h/Projects/spaceflight/scripts/spaceflight daemon
 Restart=on-failure
 RestartSec=30
 Environment=PYTHONUNBUFFERED=1
+# Include ~/.local/bin so notify-click can find spaceflight + terminal helpers
+Environment=PATH=%h/.local/bin:%h/.local/share/omarchy/bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]
 WantedBy=default.target

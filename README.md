@@ -1,27 +1,76 @@
-# Spaceflight
+# Spaceflight CLI
 
-Flashy terminal **mission control** for rocket launches — btop energy, live T-countdowns, ASCII flight paths, Waybar module, and desktop notifications.
+Flashy terminal **mission control** for rocket launches — live T-countdowns, stage timelines, Kitty/Ghostty graphics, Waybar module, desktop notifications, and optional phone push via [ntfy](https://ntfy.sh).
 
-Data comes from public launch trackers (no AI, no account):
+**[Project site →](https://0xrainy.github.io/spaceflight-tui/)** · live countdown preview, features, one-minute install.
 
-| Source | What it provides |
-|--------|------------------|
-| [Launch Library 2](https://thespacedevs.com/llapi) | Schedule, NET, status, vehicle/booster, payload, pad, streams, updates, timeline when present |
-| [Rocket Launch Live](https://www.rocketlaunch.live/api) (free next-5) | Weather for near-term launches |
-| [SpaceX CMS](https://content.spacex.com) (`api/spacex-website/missions/…`) | Official countdown + flight-test timeline, mission copy, trajectory infographic (same data as spacex.com/launches/…) |
-
-Free LL2 rate limit is ~**15 requests/hour**. Spaceflight caches aggressively and only hits the network about **every 5 minutes**.
-
-## Git (local)
-
-This project is a **local git repo** so you don’t lose good versions:
+**Version 1.0.0** — codebase follows Gerard Holzmann’s [**Power of Ten**](https://spinroot.com/gerard/pdf/P10.pdf) rules (NASA/JPL-inspired), adapted for Python. See [`docs/POWER_OF_TEN.md`](docs/POWER_OF_TEN.md).
 
 ```bash
-cd ~/projects/spaceflight
-git log --oneline
-git tag                 # v0.1.0 = first solid build, v0.2.0 = flashy UI
-git checkout v0.1.0     # time travel if needed
+PYTHONPATH=. python3 tools/check_p10.py          # 0 findings
+PYTHONPATH=. python3 -m unittest discover -s tests -v
 ```
+
+## Install (Linux)
+
+```bash
+git clone https://github.com/0xRainy/spaceflight-tui.git
+cd spaceflight-tui
+bash scripts/install.sh
+```
+
+Installs:
+
+| Piece | Where |
+|-------|--------|
+| CLI | `~/.local/bin/spaceflight` |
+| Daemon | `systemctl --user` → `spaceflight.service` |
+| Waybar helper | `~/.config/waybar/scripts/spaceflight-waybar` |
+| Config | `~/.config/spaceflight/config.toml` (**local only**) |
+
+Requirements: **Python 3.11+**, `requests`, `notify-send` (desktop alerts), optional **Waybar** + Kitty/Ghostty for images.
+
+### First-install onboarding (ntfy phone alerts)
+
+`install.sh` runs an interactive wizard when you have a TTY:
+
+```
+════════════════════════════════════════════════════
+  Spaceflight — first-time setup
+════════════════════════════════════════════════════
+
+  Desktop notifications & Waybar work without this.
+  Phone push uses free ntfy (https://ntfy.sh).
+  Your topic name is a secret — never commit it.
+
+  [1] Generate a private topic for me  (recommended)
+  [2] I already have an ntfy topic
+  [3] Skip — desktop / Waybar only for now
+
+Choice [1]:
+```
+
+**Path [1] — generate (recommended)**
+
+1. Install the free **ntfy** app (Android / iOS / [ntfy.sh](https://ntfy.sh)).
+2. Wizard prints a long random topic (treat it like a password).
+3. In the app: **Subscribe** → paste that topic.
+4. Press Enter, optional server/token tweaks, then a **test push**.
+5. Settings saved to `~/.config/spaceflight/config.toml` (mode `0600`).
+
+**Path [2]** — paste a topic you already use.  
+**Path [3]** — skip; desktop + Waybar still work. Re-run anytime:
+
+```bash
+spaceflight setup              # wizard
+spaceflight setup --status     # topic masked (never full secret)
+spaceflight notify-test --phone
+```
+
+Non-interactive installs print a hint instead of the wizard.
+
+> **Security:** `ntfy_topic` / `ntfy_token` must never be committed or pasted into issues.  
+> See [SECURITY.md](SECURITY.md). The repo only ships empty `config.example.toml`.
 
 ## Quick start
 
@@ -30,13 +79,24 @@ spaceflight                 # mission-control TUI
 spaceflight list
 spaceflight refresh         # force network pull (rate-limited)
 spaceflight status
+spaceflight setup           # phone (ntfy) wizard
 ```
 
-Daemon (already enabled if you ran install):
+Daemon:
 
 ```bash
 systemctl --user status spaceflight
 ```
+
+## Data sources (no account)
+
+| Source | What it provides |
+|--------|------------------|
+| [Launch Library 2](https://thespacedevs.com/llapi) | Schedule, NET, status, vehicle, pad, streams, timelines |
+| [Rocket Launch Live](https://www.rocketlaunch.live/api) | Weather for near-term launches (free next-5) |
+| [SpaceX CMS](https://content.spacex.com) | Official countdown / flight-test timelines, mission copy |
+
+Free LL2 ≈ **15 requests/hour**. Spaceflight caches aggressively and uses a smart pull schedule around NET.
 
 ## TUI — keys
 
@@ -45,9 +105,8 @@ systemctl --user status spaceflight
 | `j` / `k` or ↑/↓ | Move in launch queue **or** scroll detail |
 | `Tab` | Focus queue ↔ mission-control panel |
 | **`←` / `→` or `h` / `l`** | **Switch detail tabs** (when detail focused) |
-| **`t`** | Next detail tab (works anytime) |
-| **`1`–`6`** | Jump to tab |
-| `[` / `]` | Previous / next tab |
+| **`t`** | Next detail tab |
+| **`1`–`5`** | Jump to tab |
 | `f` | Cycle filter (ALL · GO · HOLD · LIVE · SpX) |
 | `o` | Open primary livestream |
 | `i` | Open best info link |
@@ -56,56 +115,26 @@ systemctl --user status spaceflight
 | `Esc` / Backspace | Back to launch queue |
 | `q` | Quit |
 
-### Views (v0.4 redesign)
-
-Inspired by **btop** / **lazygit** / **yazi** — Tokyo Night palette, soft panels, live countdowns.
-
 | Key | View | What you see |
 |-----|------|----------------|
-| `1` | **HOME** | Large live T-countdown, status, pad/orbit facts, next stage |
-| `2` | **PATH** | **Real trajectory image** (Kitty/Ghostty graphics) + stage rail |
-| `3` | **DATA** | Vehicle specs, boosters, payload, mission brief (scroll) |
+| `1` | **HOME** | Live T-countdown, stream + radar panes, status bus |
+| `2` | **PATH** | Trajectory image (Kitty/Ghostty) + stage rail |
+| `3` | **DATA** | Vehicle, boosters, payload, mission brief |
 | `4` | **EVENTS** | Countdown + flight timeline + schedule updates |
 | `5` | **WATCH** | Livestreams & mission page links |
 
-PATH uses the official SpaceX infographic as a native terminal image (not ASCII). Ghostty is fully supported.
+### Notifications
 
-Countdowns tick every frame. Network auto-refresh every **5 minutes**.
+| Channel | When |
+|---------|------|
+| **Desktop** | T-24h / T-1h / T-10m, webcast live, hold, scrub, stages |
+| **Phone (ntfy)** | T-24h / T-1h / T-10m, scrub/failure (no stage spam) |
 
-### Stage notifications (desktop)
-
-When a mission has a timeline (SpaceX CMS or LL2), the daemon notifies for **each stage** as wall-clock passes it — e.g. prop load, Max-Q, MECO, hot-staging, landing burn — not just T-1h / T-15m. Poll speeds up to **15s** inside the T-2h…T+2h window.
-
-### Phone push (T-24h / T-1h / T-10m) via ntfy
-
-No extra system packages — uses HTTPS to [ntfy.sh](https://ntfy.sh) (or your own server).
-
-1. Install the **ntfy** app on your phone (Android / iOS).
-2. Pick a long random topic name (treat it like a password).
-3. Subscribe to that topic in the app.
-4. Configure Spaceflight:
-
-```toml
-# ~/.config/spaceflight/config.toml
-[phone]
-ntfy_topic = "your-long-random-topic-here"
-ntfy_server = "https://ntfy.sh"
-# ntfy_token = ""   # only if you use access control
-```
-
-Or: `export SPACEFLIGHT_NTFY_TOPIC=your-long-random-topic-here`
-
-5. Test: `spaceflight notify-test --phone`
-
-Phone gets **T-24h**, **T-1h**, and **T-10m** pushes with mission name, vehicle, location, local + UTC T-0, and a watch/info link (tappable). Stage spam stays on the desktop only.
-
-### Scrolling
-
-On **DATA** / **EVENTS** / **WATCH**, press **Tab** to focus the detail pane, then **`j`/`k`** to scroll. Long content shows a scroll HUD.
+Configure phone with `spaceflight setup` (or env `SPACEFLIGHT_NTFY_TOPIC` — avoid exporting secrets into shell history when possible).
 
 ## Waybar
 
-Module runs **every 1 second** but only reads the local cache — **no API hammering**. Countdown text uses `T-HH:MM:SS` so it ticks live.
+Module ticks from the **local cache** (daemon rewrites every second) — no API hammering.
 
 ```jsonc
 "custom/spaceflight": {
@@ -119,43 +148,35 @@ Module runs **every 1 second** but only reads the local cache — **no API hamme
 }
 ```
 
-Hover tooltip lists upcoming launches. Left-click opens the TUI.
+Add `"custom/spaceflight"` to a `modules-*` array. Finished / DONE flights are never featured on the bar.
 
-## Notifications
-
-User service `spaceflight.service`:
-
-- Refresh network data ~every **5 minutes**
-- Poll countdowns every minute for notify thresholds: **T-24h, T-1h, T-10m**, plus **webcast live** and flight stages (desktop)
-
-## Cache paths
+## Local paths
 
 | Path | Purpose |
 |------|---------|
-| `~/.cache/spaceflight/launches.json` | Shared launch cache |
-| `~/.cache/spaceflight/waybar.json` | Last waybar payload |
-| `~/.local/state/spaceflight/notified.json` | Notification dedupe |
-| `~/.local/state/spaceflight/daemon.log` | Daemon log |
+| `~/.config/spaceflight/config.toml` | User settings (**secrets live here**) |
+| `~/.cache/spaceflight/launches.json` | Launch cache |
+| `~/.cache/spaceflight/waybar.json` | Waybar payload |
+| `~/.local/state/spaceflight/` | Notify dedupe, onboard state, logs |
 
 ## Project layout
 
 ```
-projects/spaceflight/
+spaceflight-tui/
+├── config.example.toml    # safe template (empty secrets)
 ├── spaceflight/
-│   ├── api/           # LL2 + RocketLaunch.Live
-│   ├── tui/
-│   │   ├── app.py     # main mission-control UI
-│   │   ├── art.py     # big digits, rockets, starfield
-│   │   └── flightpath.py  # ASCII trajectory
+│   ├── api/               # LL2 + RLL + SpaceX CMS
+│   ├── tui/               # mission-control UI
+│   ├── onboard.py         # first-install ntfy wizard
 │   ├── daemon.py
 │   ├── waybar.py
 │   └── …
-├── scripts/
-└── systemd/spaceflight.service
+├── scripts/install.sh
+├── systemd/spaceflight.service
+├── tests/
+└── docs/POWER_OF_TEN.md
 ```
 
-## Notes
+## License
 
-- Flight PATH tab is a **fun stylized sketch** (gravity-turn style), not Flight Club guidance.
-- Livestream URLs often appear only near launch; NEWS tab tracks NET slips as LL2 posts them.
-- Be kind to free APIs — prefer the 5‑minute cadence over spamming `refresh`.
+MIT — see [LICENSE](LICENSE).

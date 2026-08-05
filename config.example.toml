@@ -1,0 +1,22 @@
+# Spaceflight user config
+# Copy to:  ~/.config/spaceflight/config.toml
+#   cp config.example.toml ~/.config/spaceflight/config.toml
+#
+# Or run the guided wizard (recommended):
+#   spaceflight setup
+#
+# ⚠  ntfy_topic is a secret (anyone with it can read your alerts).
+#    Never commit config.toml, paste topics into issues, or share screenshots
+#    that show the full topic name.
+
+[phone]
+# Leave empty to disable phone push. Desktop alerts still work.
+ntfy_topic = ""
+# Public default; change only if you self-host ntfy
+ntfy_server = "https://ntfy.sh"
+# Optional Bearer token when the topic uses access control
+ntfy_token = ""
+
+[desktop]
+# notify-send alerts (thresholds + stage events)
+enabled = true

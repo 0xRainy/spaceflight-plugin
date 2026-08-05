@@ -1,0 +1,4 @@
+# GitHub Pages (docs/ folder)
+# Enable: Repo → Settings → Pages → Deploy from branch → /docs
+title: Spaceflight CLI
+description: Mission control in your terminal for rocket launches.

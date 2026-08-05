@@ -1,0 +1,64 @@
+[project]
+name = "spaceflight"
+version = "1.0.0"
+description = "Terminal rocket launch tracker — TUI, Waybar, desktop + ntfy phone alerts"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "0xRainy" }]
+dependencies = [
+  "requests>=2.28",
+]
+
+[project.urls]
+Homepage = "https://github.com/0xRainy/spaceflight-tui"
+Repository = "https://github.com/0xRainy/spaceflight-tui"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "types-requests",
+]
+
+[project.scripts]
+spaceflight = "spaceflight.cli:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["spaceflight", "tests", "tools"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle
+  "F",   # pyflakes
+  "W",   # warnings
+  "B",   # bugbear
+  "I",   # isort
+  "UP",  # pyupgrade
+  "SIM", # simplify
+  "RUF",
+]
+ignore = [
+  "E501",  # line length handled separately where needed
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.mypy]
+python_version = "3.11"
+packages = ["spaceflight"]
+warn_unused_configs = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

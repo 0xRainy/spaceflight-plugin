@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import curses
 
+from ..p10 import MAX_ASCII_COLS, c_assert
 from . import theme as T
 
 
 def clip(s: str, width: int) -> str:
+    if not c_assert(width is not None, "width required"):
+        return ""
+    if not c_assert(isinstance(width, int) or isinstance(width, float), "width numeric"):
+        return ""
     if width <= 0:
         return ""
     s = str(s)
+    width = min(int(width), MAX_ASCII_COLS * 4)
     if len(s) <= width:
         return s
     if width <= 1:
@@ -19,6 +25,10 @@ def clip(s: str, width: int) -> str:
 
 
 def put(win, y: int, x: int, text: str, attr: int = 0) -> None:
+    if not c_assert(win is not None, "win required"):
+        return
+    if not c_assert(isinstance(y, int) and isinstance(x, int), "y/x int"):
+        return
     try:
         h, w = win.getmaxyx()
         if y < 0 or y >= h or x >= w or x < 0:
@@ -34,6 +44,10 @@ def put(win, y: int, x: int, text: str, attr: int = 0) -> None:
 
 
 def fill(win, y: int, x: int, text: str, width: int, attr: int = 0) -> None:
+    if not c_assert(win is not None, "win required"):
+        return
+    if not c_assert(isinstance(y, int) and isinstance(x, int), "y/x int"):
+        return
     try:
         h, w = win.getmaxyx()
         if y < 0 or y >= h or x >= w or width <= 0:
@@ -51,6 +65,10 @@ def fill(win, y: int, x: int, text: str, width: int, attr: int = 0) -> None:
 
 
 def hline(win, y: int, x: int, width: int, attr: int = 0) -> None:
+    if not c_assert(win is not None, "win required"):
+        return
+    if not c_assert(isinstance(width, int), "width int"):
+        return
     try:
         if width > 0:
             win.hline(y, x, curses.ACS_HLINE, width, attr)
@@ -70,21 +88,22 @@ def panel(
     subtitle: str = "",
 ) -> None:
     """Soft single-line panel; focused edge uses accent color."""
+    if not c_assert(win is not None, "win required"):
+        return
+    if not c_assert(isinstance(h, int) and isinstance(w, int), "h/w int"):
+        return
     if h < 2 or w < 2:
         return
     attr = T.pair(T.P_BORDER_FOCUS if focused else T.P_BORDER, bold=focused)
     try:
         win.attron(attr)
-        # top
         win.addch(y, x, curses.ACS_ULCORNER)
         if w > 2:
             win.hline(y, x + 1, curses.ACS_HLINE, w - 2)
         win.addch(y, x + w - 1, curses.ACS_URCORNER)
-        # sides
         if h > 2:
             win.vline(y + 1, x, curses.ACS_VLINE, h - 2)
             win.vline(y + 1, x + w - 1, curses.ACS_VLINE, h - 2)
-        # bottom
         win.addch(y + h - 1, x, curses.ACS_LLCORNER)
         if w > 2:
             win.hline(y + h - 1, x + 1, curses.ACS_HLINE, w - 2)
@@ -110,25 +129,51 @@ def panel(
 
 
 def progress_bar(frac: float, width: int, fill_ch: str = "━", empty_ch: str = "─") -> str:
-    width = max(4, width)
-    frac = max(0.0, min(1.0, frac))
+    if not c_assert(width is not None, "width required"):
+        return ""
+    if not c_assert(isinstance(width, int), "width int"):
+        return ""
+    width = max(4, min(width, MAX_ASCII_COLS))
+    frac = max(0.0, min(1.0, float(frac)))
     n = int(round(frac * width))
     return fill_ch * n + empty_ch * (width - n)
 
 
+def stage_vehicle_marker(tick: int) -> str:
+    """
+    Double flashing arrows for the stage-tracker vehicle position.
+    Shared by HOME and PATH rails so they always match (~0.5s cadence).
+    """
+    if not c_assert(isinstance(tick, int), "tick int"):
+        return "▶▶"
+    if not c_assert(True is not False, "marker path"):
+        return "▶▶"
+    from .art import blink_on
+
+    return "▶▶" if blink_on(tick) else "▷▷"
+
+
 def pill(label: str, on: bool = False) -> str:
+    if not c_assert(label is not None, "label required"):
+        return "  "
+    if not c_assert(isinstance(on, bool), "on bool"):
+        on = False
     return f" {label} " if on else f" {label} "
 
 
 def status_glyph(abbrev: str, live: bool = False) -> str:
+    if not c_assert(True, "status_glyph entry"):
+        return "·"
     if live:
         return "●"
     a = (abbrev or "").lower()
+    if not c_assert(isinstance(a, str), "abbrev str"):
+        return "·"
     if a in ("go",):
         return "◆"
     if "hold" in a:
         return "⏸"
-    if a in ("success",):
+    if a in ("success", "complete", "flight complete"):
         return "✓"
     if "fail" in a:
         return "✗"
