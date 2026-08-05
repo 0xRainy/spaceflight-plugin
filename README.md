@@ -28,7 +28,13 @@ Installs:
 | Waybar helper | `~/.config/waybar/scripts/spaceflight-waybar` |
 | Config | `~/.config/spaceflight/config.toml` (**local only**) |
 
-Requirements: **Python 3.11+**, `requests`, `notify-send` (desktop alerts), optional **Waybar** + Kitty/Ghostty for images.
+```bash
+spaceflight              # mission-control TUI
+spaceflight refresh      # fetch / update cache
+spaceflight setup        # ntfy phone wizard
+```
+
+Requirements: **Python 3.11+**, `requests`, `notify-send` (desktop alerts), optional **Waybar** / Omarchy Quattro + Kitty/Ghostty for images.
 
 ### First-install onboarding (ntfy phone alerts)
 
@@ -166,7 +172,8 @@ spaceflight-tui/
 ├── config.example.toml    # safe template (empty secrets)
 ├── spaceflight/
 │   ├── api/               # LL2 + RLL + SpaceX CMS
-│   ├── tui/               # mission-control UI
+│   ├── ui/                # mission-control TUI (public)
+│   ├── tui/               # shared helpers + prior layout (reference)
 │   ├── onboard.py         # first-install ntfy wizard
 │   ├── daemon.py
 │   ├── waybar.py
@@ -174,7 +181,7 @@ spaceflight-tui/
 ├── scripts/install.sh
 ├── systemd/spaceflight.service
 ├── tests/
-└── docs/POWER_OF_TEN.md
+└── docs/
 ```
 
 ## License

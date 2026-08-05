@@ -1,4 +1,4 @@
-"""Tokyo Night color pairs for Spaceflight Next (Power of Ten)."""
+"""Tokyo Night color pairs for Spaceflight (Power of Ten)."""
 
 from __future__ import annotations
 

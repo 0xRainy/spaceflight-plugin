@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-# Spaceflight Next — full mission-control TUI with clean chrome
-set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# Parent project root (contains the `spaceflight` package)
-PARENT="$(cd "$ROOT/.." && pwd)"
-export PYTHONPATH="${ROOT}:${PARENT}${PYTHONPATH:+:$PYTHONPATH}"
-exec python3 -m spaceflight_next "$@"

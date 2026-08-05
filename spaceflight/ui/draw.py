@@ -1,4 +1,4 @@
-"""Drawing primitives for Spaceflight Next (Power of Ten)."""
+"""Drawing primitives for Spaceflight (Power of Ten)."""
 
 from __future__ import annotations
 

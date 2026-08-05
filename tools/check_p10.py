@@ -15,10 +15,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# Main package + Spaceflight Next prototype (same Power-of-Ten bar)
+# Main package (Power-of-Ten bar)
 PKG_DIRS = (
     ROOT / "spaceflight",
-    ROOT / "spaceflight-next" / "spaceflight_next",
 )
 MAX_FN_LINES = 60
 MIN_ASSERT_AVG = 2.0
@@ -278,14 +277,14 @@ def main() -> int:
     all_findings: list[Finding] = []
     files = _iter_py_files()
     if not files:
-        print("No Python files under spaceflight/ or spaceflight-next/", file=sys.stderr)
+        print("No Python files under spaceflight/", file=sys.stderr)
         return 2
     for path in files:
         all_findings.extend(check_file(path))
 
     if not all_findings:
         print(
-            f"Power of Ten: OK ({len(files)} files incl. spaceflight-next, 0 findings)"
+            f"Power of Ten: OK ({len(files)} files, 0 findings)"
         )
         return 0
 

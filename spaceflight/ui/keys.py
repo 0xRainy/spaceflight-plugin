@@ -1,4 +1,4 @@
-"""Keyboard handling for Spaceflight Next (Power of Ten)."""
+"""Keyboard handling for Spaceflight (Power of Ten)."""
 
 from __future__ import annotations
 

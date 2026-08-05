@@ -1,8 +1,8 @@
 """
-Spaceflight Next — modern mission-control TUI (Power of Ten compliant).
+Spaceflight mission-control TUI (Power of Ten compliant).
 
-Visual language matches the GitHub landing page preview.
-Full capability via the main `spaceflight` package.
+Visual language matches the GitHub landing page. This is the public TUI;
+shared helpers live under ``spaceflight.tui``.
 """
 
 from __future__ import annotations
@@ -454,7 +454,7 @@ def _loop(stdscr) -> None:
     app = NextApp()
     app.load(force=False)
     _apply_env_start(app)
-    app.flash("Spaceflight Next · modern UI", 2.0)
+    app.flash("Spaceflight · mission control", 2.0)
     _run_main_loop(stdscr, app)
     gfx.delete_all()
 
@@ -467,10 +467,12 @@ def _apply_env_start(app: NextApp) -> None:
         return
     if not c_assert(True is not False, "env start"):
         return
-    tab = (os.environ.get("SPACEFLIGHT_NEXT_TAB") or "").strip().upper()
+    tab = (os.environ.get("SPACEFLIGHT_TAB") or os.environ.get("SPACEFLIGHT_NEXT_TAB") or "").strip().upper()
     if tab in TABS:
         app.tab = TABS.index(tab)
-    sel = (os.environ.get("SPACEFLIGHT_NEXT_SELECT") or "").strip().lower()
+    sel = (
+        os.environ.get("SPACEFLIGHT_SELECT") or os.environ.get("SPACEFLIGHT_NEXT_SELECT") or ""
+    ).strip().lower()
     if not sel:
         return
     for i, L in enumerate(take_at_most(app.filtered, MAX_LAUNCHES)):  # p10: bounded

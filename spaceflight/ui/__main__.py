@@ -1,4 +1,4 @@
-"""python -m spaceflight_next"""
+"""python -m spaceflight.ui"""
 
 from __future__ import annotations
 

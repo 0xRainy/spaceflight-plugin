@@ -16,6 +16,9 @@ chmod +x "$ROOT/scripts/spaceflight" "$ROOT/scripts/spaceflight-waybar" "$ROOT/s
 ln -sfn "$ROOT/scripts/spaceflight" "$BIN_DIR/spaceflight"
 ln -sfn "$ROOT/scripts/spaceflight-waybar" "$WAYBAR_SCRIPTS/spaceflight-waybar"
 
+# Drop dual-product symlinks if a previous install left them
+rm -f "$BIN_DIR/spaceflight-next" "$BIN_DIR/spaceflight-classic" 2>/dev/null || true
+
 # Safe example only — never overwrite a live config.toml (may hold ntfy secrets)
 if [[ -f "$ROOT/config.example.toml" && ! -f "$CFG_DIR/config.example.toml" ]]; then
   cp "$ROOT/config.example.toml" "$CFG_DIR/config.example.toml"
@@ -86,7 +89,7 @@ fi
 
 echo ""
 echo "Quick commands:"
-echo "  spaceflight              # TUI mission control"
+echo "  spaceflight              # mission-control TUI"
 echo "  spaceflight setup        # phone (ntfy) wizard anytime"
 echo "  spaceflight notify-test  # desktop test"
 echo "  spaceflight status"

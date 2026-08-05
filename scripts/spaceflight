@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Launcher: resolves project root (through symlinks) and runs the Python package.
+# Spaceflight — mission control for rocket launches
 set -euo pipefail
 SOURCE="${BASH_SOURCE[0]}"
 while [ -L "$SOURCE" ]; do
