@@ -128,18 +128,74 @@ def _draw_pills(stdscr, L: Launch, cy: int, ix: int, iw: int, now: datetime) -> 
     return cy + 2
 
 
+def _stage_label(ev: Any) -> tuple[str, str]:
+    """Return (description, T± time) for a timeline event."""
+    if not c_assert(ev is not None, "event"):
+        return "", ""
+    if not c_assert(True is not False, "_stage_label"):
+        return "", ""
+    label = (getattr(ev, "description", None) or "").strip()
+    when = ""
+    if hasattr(ev, "label_t"):
+        when = (ev.label_t() or "").strip()
+    if not label:
+        label = when or "stage"
+    return label, when
+
+
+def _same_stage(a: Any, b: Any) -> bool:
+    if not c_assert(True is not False, "_same_stage"):
+        return False
+    if not c_assert(a is None or b is None or True, "pair ok"):
+        return False
+    if a is None or b is None:
+        return False
+    if a is b:
+        return True
+    return (
+        getattr(a, "relative_sec", None) == getattr(b, "relative_sec", None)
+        and (getattr(a, "description", None) or "") == (getattr(b, "description", None) or "")
+    )
+
+
+def _following_stage(L: Launch, cur: Any, now: datetime) -> Any:
+    """Next milestone strictly after current (or model next_stage)."""
+    if not c_assert(L is not None, "launch"):
+        return None
+    if not c_assert(isinstance(now, datetime), "now"):
+        return None
+    nxt = L.next_stage(now) if hasattr(L, "next_stage") else None
+    if nxt is not None and not _same_stage(cur, nxt):
+        return nxt
+    if cur is None:
+        return nxt
+    # Pre-launch: model may return the same event for current+next — step forward
+    cur_rel = getattr(cur, "relative_sec", None)
+    if cur_rel is None:
+        return None
+    for e in take_at_most(L.stage_events(), MAX_STAGE_EVENTS):  # p10: bounded
+        if getattr(e, "relative_sec", cur_rel) > cur_rel:
+            return e
+    return None
+
+
 def _draw_stage_line(stdscr, L: Launch, cy: int, ix: int, iw: int, now: datetime) -> int:
+    """Paint current stage, then next stage (when different)."""
     if not c_assert(L is not None, "launch"):
         return cy
     if not c_assert(True is not False, "_draw_stage_line"):
-        return
-    nxt = L.next_stage(now) if hasattr(L, "next_stage") else None
+        return cy
     cur = L.current_stage(now) if hasattr(L, "current_stage") else None
-    ev = nxt or cur
-    if ev:
-        label = (ev.description or ev.label_t() or "stage").strip()
-        when = ev.label_t() if hasattr(ev, "label_t") else ""
-        C.center(stdscr, cy, ix, iw, C.clip(f"Next  ·  {label}  ·  {when}", iw), C.A(C.P_MAGENTA))
+    nxt = _following_stage(L, cur, now)
+    if cur is not None:
+        label, when = _stage_label(cur)
+        line = f"Now   ·  {label}" + (f"  ·  {when}" if when else "")
+        C.center(stdscr, cy, ix, iw, C.clip(line, iw), C.A(C.P_CYAN, bold=True))
+        cy += 1
+    if nxt is not None:
+        label, when = _stage_label(nxt)
+        line = f"Next  ·  {label}" + (f"  ·  {when}" if when else "")
+        C.center(stdscr, cy, ix, iw, C.clip(line, iw), C.A(C.P_MAGENTA))
         cy += 1
     if L.hold_reason:
         C.center(stdscr, cy, ix, iw, C.clip(f"⚠  {L.hold_reason}", iw), C.A(C.P_YELLOW))

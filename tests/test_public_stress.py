@@ -357,6 +357,56 @@ class TestPublicUIApp(unittest.TestCase):
             self.assertTrue(m.called)
 
 
+class TestStageNowAndNext(unittest.TestCase):
+    """HOME mission board must show current stage and next stage."""
+
+    def setUp(self) -> None:
+        _patch_curses()
+        from spaceflight.test_flight import set_test_flight_enabled
+        from spaceflight.ui import theme as UT
+
+        UT.init_theme()
+        set_test_flight_enabled(True)
+
+    def test_draw_stage_line_shows_now_and_next(self) -> None:
+        from spaceflight.test_flight import make_test_launch
+        from spaceflight.ui.home import _draw_stage_line
+
+        now = datetime.now(timezone.utc)
+        L = make_test_launch(now)
+        # Post-liftoff so current ≠ next
+        L.net = now - timedelta(seconds=90)
+        L.status_abbrev = "In Flight"
+        L.webcast_live = True
+        scr = CaptureScreen(30, 100)
+        _draw_stage_line(scr, L, 2, 2, 90, now)
+        blob = scr.text()
+        self.assertIn("Now", blob)
+        self.assertIn("Next", blob)
+        self.assertNotEqual(
+            [w for w in scr.writes if w.startswith("Now")],
+            [w for w in scr.writes if w.startswith("Next")],
+        )
+
+    def test_prelaunch_now_and_following_next(self) -> None:
+        from spaceflight.test_flight import make_test_launch
+        from spaceflight.ui.home import _draw_stage_line
+
+        now = datetime.now(timezone.utc)
+        L = make_test_launch(now)
+        L.net = now + timedelta(hours=2)
+        L.status_abbrev = "Go"
+        L.webcast_live = False
+        L.hold_t_minus_sec = None
+        scr = CaptureScreen(30, 100)
+        _draw_stage_line(scr, L, 2, 2, 90, now)
+        now_lines = [w for w in scr.writes if w.startswith("Now")]
+        next_lines = [w for w in scr.writes if w.startswith("Next")]
+        self.assertTrue(now_lines, scr.writes)
+        self.assertTrue(next_lines, scr.writes)
+        self.assertNotEqual(now_lines[0], next_lines[0])
+
+
 class TestCountdownMath(unittest.TestCase):
     def setUp(self) -> None:
         _patch_curses()
