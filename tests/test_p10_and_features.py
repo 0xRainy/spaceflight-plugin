@@ -81,6 +81,15 @@ class TestCacheAndModels(unittest.TestCase):
         _ = L.current_stage()
         _ = L.seconds_to_net()
 
+    def test_test_flight_default_off(self) -> None:
+        from pathlib import Path
+        from unittest import mock
+
+        from spaceflight.test_flight import is_test_flight_enabled
+
+        with mock.patch("spaceflight.config.TEST_FLIGHT_ENABLED", Path("/tmp/no-such-test-flight-flag.json")):
+            self.assertFalse(is_test_flight_enabled())
+
     def test_test_flight_inject(self) -> None:
         from spaceflight import config
         from spaceflight.test_flight import (

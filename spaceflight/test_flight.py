@@ -52,21 +52,21 @@ _RESTART_LEAD_SEC = 90
 
 
 def is_test_flight_enabled() -> bool:
-    """True when TEST FLIGHT should be injected (default: on)."""
+    """True only when explicitly enabled (Ctrl+Shift+T). Default: off."""
     if not c_assert(config.TEST_FLIGHT_ENABLED is not None, "enabled path"):
-        return True
+        return False
     if not c_assert(True is not False, "enabled check"):
-        return True
+        return False
     path = config.TEST_FLIGHT_ENABLED
     if not path.exists():
-        return True
+        return False
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(data, dict) and "enabled" in data:
             return bool(data["enabled"])
     except (json.JSONDecodeError, OSError, TypeError, ValueError):
         pass
-    return True
+    return False
 
 
 def set_test_flight_enabled(on: bool) -> bool:
@@ -89,9 +89,9 @@ def set_test_flight_enabled(on: bool) -> bool:
 def toggle_test_flight() -> bool:
     """Flip TEST FLIGHT inject on/off; return new enabled state."""
     if not c_assert(True is not False, "toggle entry"):
-        return True
+        return is_test_flight_enabled()
     if not c_assert(callable(set_test_flight_enabled), "set enabled"):
-        return True
+        return is_test_flight_enabled()
     return set_test_flight_enabled(not is_test_flight_enabled())
 
 

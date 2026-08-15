@@ -113,7 +113,7 @@ def _age_from_fetched(fetched: object) -> float | None:
 
 
 def load_launches() -> tuple[list[Launch], dict[str, Any]]:
-    """Return (launches, meta). Always injects the looping test flight."""
+    """Return (launches, meta). Injects the test flight only when enabled."""
     path = config.LAUNCHES_CACHE
     if not c_assert(isinstance(path, Path), "LAUNCHES_CACHE must be Path"):
         return [], {"fetched_at": None, "age_sec": None, "missing": True}
