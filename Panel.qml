@@ -159,7 +159,7 @@ Panel {
             text: root.state.tooltip
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: root.cardFont
-            font.pixelSize: Style.font.small
+            font.pixelSize: Style.font.bodySmall
             wrapMode: Text.NoWrap
             lineHeight: 1.12
           }
@@ -189,7 +189,7 @@ Panel {
                 text: "Open TUI"
                 color: root.bar ? root.bar.foreground : Color.foreground
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.small
+                font.pixelSize: Style.font.bodySmall
               }
               MouseArea {
                 anchors.fill: parent
@@ -210,7 +210,7 @@ Panel {
                 text: "Run setup"
                 color: root.bar ? root.bar.foreground : Color.foreground
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.small
+                font.pixelSize: Style.font.bodySmall
               }
               MouseArea {
                 anchors.fill: parent
@@ -231,7 +231,7 @@ Panel {
                 text: "Watch"
                 color: root.bar ? root.bar.foreground : Color.foreground
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
-                font.pixelSize: Style.font.small
+                font.pixelSize: Style.font.bodySmall
               }
               MouseArea {
                 anchors.fill: parent
