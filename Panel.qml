@@ -128,15 +128,8 @@ Panel {
     open: root.opened
     centerOnBar: true
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Math.max(Style.space(380), cardMetrics.width + Style.space(32)))
+    contentWidth: panel.fittedContentWidth(Style.space(440))
     contentHeight: panel.fittedContentHeight(bodyCol.implicitHeight + Style.space(16))
-
-    TextMetrics {
-      id: cardMetrics
-      font.family: root.cardFont
-      font.pixelSize: Style.font.small
-      text: root.state.tooltip || "🚀  SPACEFLIGHT"
-    }
 
     PanelKeyCatcher {
       id: keyCatcher

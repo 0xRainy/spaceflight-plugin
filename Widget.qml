@@ -86,6 +86,23 @@ BarWidget {
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
 
+  FileView {
+    id: cacheFile
+    path: Quickshell.env("HOME") + "/.cache/spaceflight/waybar.json"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var d = JSON.parse(String(text() || "{}"))
+        if (d && d.text)
+          root.barText = String(d.text)
+      } catch (e) {
+      }
+    }
+    Component.onCompleted: reload()
+  }
+
   Loader {
     id: panelLoader
     active: true

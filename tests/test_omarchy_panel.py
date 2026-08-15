@@ -149,6 +149,8 @@ class TestBarSettingsAndWizard(unittest.TestCase):
         service = (ROOT / "Service.qml").read_text(encoding="utf-8")
         self.assertNotIn("launch-setup", widget)
         self.assertNotIn("maybeLaunchSetup", widget)
+        panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
+        self.assertNotIn("TextMetrics", panel, "TextMetrics is not a QQuickItem; KeyboardPanel rejects it")
         self.assertNotIn("launch-setup", service)
         self.assertIn("first-boot", service)
         hook = (ROOT / "scripts" / "shell-hook.bash").read_text(encoding="utf-8")
