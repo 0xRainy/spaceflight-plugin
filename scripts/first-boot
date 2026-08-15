@@ -5,6 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}/spaceflight"
 mkdir -p "$CFG"
 cp -f "$ROOT/scripts/shell-hook.bash" "$CFG/shell-hook.bash"
+cp -f "$ROOT/scripts/teardown" "$CFG/teardown"
+chmod +x "$CFG/teardown"
 line='[ -r "$HOME/.config/spaceflight/shell-hook.bash" ] && . "$HOME/.config/spaceflight/shell-hook.bash"'
 if [[ -f $HOME/.bashrc ]] && ! grep -q 'spaceflight-omarchy-hook' "$HOME/.bashrc"; then
   printf '\n# spaceflight-omarchy-hook\n%s\n' "$line" >>"$HOME/.bashrc"

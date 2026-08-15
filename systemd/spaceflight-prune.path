@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for Spaceflight Omarchy plugin removal
+
+[Path]
+PathChanged=%h/.config/omarchy/plugins
+Unit=spaceflight-prune.service
+
+[Install]
+WantedBy=default.target

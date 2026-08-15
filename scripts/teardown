@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Stop leftover Spaceflight services after the Omarchy plugin is gone.
+# Survives in ~/.config/spaceflight/teardown (plugin folder is already deleted).
+set -euo pipefail
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/spaceflight"
+PLUGIN="$CFG/omarchy/plugins/0xrainy.spaceflight"
+MARKER="$STATE/omarchy_plugin"
+if [[ ${1:-} == --if-gone ]]; then
+  [[ -e $PLUGIN ]] && exit 0
+  [[ -f $MARKER ]] || exit 0
+fi
+
+systemctl --user disable --now spaceflight.service 2>/dev/null || true
+systemctl --user disable --now spaceflight-prune.path 2>/dev/null || true
+rm -f "$CFG/systemd/user/spaceflight.service"
+rm -f "$CFG/systemd/user/spaceflight-prune.path"
+rm -f "$CFG/systemd/user/spaceflight-prune.service"
+systemctl --user daemon-reload 2>/dev/null || true
+
+rm -f "${XDG_BIN_HOME:-$HOME/.local/bin}/spaceflight"
+rm -f "$CFG/waybar/scripts/spaceflight-waybar"
+
+if [[ -f $STATE/daemon.pid ]]; then
+  pid=$(cat "$STATE/daemon.pid" 2>/dev/null || true)
+  if [[ $pid =~ ^[0-9]+$ ]]; then
+    kill "$pid" 2>/dev/null || true
+  fi
+  rm -f "$STATE/daemon.pid"
+fi
+rm -f "$MARKER"
+# Keep ~/.config/spaceflight/config.toml — may hold the ntfy topic.

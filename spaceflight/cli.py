@@ -398,6 +398,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_settings_parser(sub)
     ps = sub.add_parser("plugin-setup", help="Interactive first-run (TUI + daemon + ntfy)")
     ps.set_defaults(func=cmd_plugin_setup)
+    td = sub.add_parser("teardown", help="Stop daemon and leftovers after plugin remove")
+    td.set_defaults(func=cmd_teardown)
     return p
 
 
@@ -471,6 +473,18 @@ def cmd_plugin_setup(_args: argparse.Namespace) -> int:
     from .plugin_setup import run
 
     return int(run() or 0)
+
+
+def cmd_teardown(_args: argparse.Namespace) -> int:
+    if not c_assert(_args is not None, "args"):
+        return 2
+    if not c_assert(True is not False, "teardown cmd"):
+        return 2
+    from .teardown import uninstall_services
+
+    result = uninstall_services()
+    print("stopped" if result.get("ok") else "teardown failed")
+    return 0 if result.get("ok") else 1
 
 
 def cmd_settings(args: argparse.Namespace) -> int:

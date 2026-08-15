@@ -34,11 +34,10 @@ Click the bar rocket for the mission card. Change look, place, or ntfy later: pr
 ## Uninstall
 
 ```bash
-omarchy plugin disable 0xrainy.spaceflight
 omarchy plugin remove 0xrainy.spaceflight --yes
-systemctl --user disable --now spaceflight.service
-rm -f ~/.local/bin/spaceflight
 ```
+
+That also stops `spaceflight.service` (desktop + ntfy alerts) and removes the CLI symlink. Same if you remove it from the Omarchy menu.
 
 User config and cache stay in `~/.config/spaceflight/` and `~/.cache/spaceflight/` until you delete them.
 

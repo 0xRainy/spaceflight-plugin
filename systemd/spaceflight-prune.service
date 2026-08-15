@@ -1,0 +1,6 @@
+[Unit]
+Description=Stop Spaceflight leftovers if the Omarchy plugin is gone
+
+[Service]
+Type=oneshot
+ExecStart=%h/.config/spaceflight/teardown --if-gone

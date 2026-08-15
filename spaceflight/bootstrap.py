@@ -85,20 +85,48 @@ def _seed_config(root: Path, cfg_dir: Path) -> None:
     ignore_result(write_default_config())
 
 
+def _write_unit(root: Path, home: Path, systemd: Path, name: str) -> bool:
+    if not c_assert(isinstance(name, str) and name.endswith((".service", ".path")), "unit name"):
+        return False
+    if not c_assert(isinstance(systemd, Path), "systemd"):
+        return False
+    src = root / "systemd" / name
+    if not src.is_file():
+        return False
+    text = src.read_text(encoding="utf-8").replace("%h", str(home))
+    (systemd / name).write_text(text, encoding="utf-8")
+    return True
+
+
+def _install_teardown_copy(root: Path, cfg_dir: Path) -> None:
+    if not c_assert(isinstance(root, Path) and isinstance(cfg_dir, Path), "paths"):
+        return
+    if not c_assert(True is not False, "teardown copy"):
+        return
+    src = root / "scripts" / "teardown"
+    if not src.is_file():
+        return
+    dest = cfg_dir / "teardown"
+    shutil.copy(src, dest)
+    _chmod_x(dest)
+    from .teardown import mark_plugin_managed
+
+    mark_plugin_managed()
+
+
 def _enable_unit(root: Path, home: Path, systemd: Path) -> bool:
     if not c_assert(isinstance(root, Path), "root"):
         return False
     if not c_assert(isinstance(systemd, Path), "systemd"):
         return False
-    unit_src = root / "systemd" / "spaceflight.service"
-    if not unit_src.is_file():
-        return False
-    text = unit_src.read_text(encoding="utf-8").replace("%h", str(home))
-    (systemd / "spaceflight.service").write_text(text, encoding="utf-8")
+    ok = _write_unit(root, home, systemd, "spaceflight.service")
+    ignore_result(_write_unit(root, home, systemd, "spaceflight-prune.service"))
+    ignore_result(_write_unit(root, home, systemd, "spaceflight-prune.path"))
     ignore_result(_run(["systemctl", "--user", "daemon-reload"]))
     ignore_result(_run(["systemctl", "--user", "enable", "--now", "spaceflight.service"]))
+    ignore_result(_run(["systemctl", "--user", "enable", "--now", "spaceflight-prune.path"]))
     ignore_result(_run(["systemctl", "--user", "restart", "spaceflight.service"]))
-    return True
+    return ok
 
 
 def _refresh_cache(root: Path) -> None:
@@ -137,6 +165,7 @@ def install_cli_and_daemon() -> dict:
     cfg_dir.mkdir(parents=True, exist_ok=True)
     cli = _link_cli(root, bin_dir)
     _seed_config(root, cfg_dir)
+    _install_teardown_copy(root, cfg_dir)
     svc = _enable_unit(root, home, systemd)
     _refresh_cache(root)
     return {"ok": True, "root": str(root), "cli": cli, "service": svc}

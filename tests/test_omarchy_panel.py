@@ -153,6 +153,31 @@ class TestBarSettingsAndWizard(unittest.TestCase):
         hook = (ROOT / "scripts" / "shell-hook.bash").read_text(encoding="utf-8")
         self.assertIn("plugin-setup", hook)
         self.assertIn("omarchy()", hook)
+        self.assertIn("teardown", hook)
+        self.assertIn("remove", hook)
+        self.assertTrue((ROOT / "scripts" / "teardown").is_file())
+        self.assertTrue((ROOT / "systemd" / "spaceflight-prune.path").is_file())
+        unit = (ROOT / "systemd" / "spaceflight.service").read_text(encoding="utf-8")
+        self.assertIn("%h/.local/bin/spaceflight", unit)
+        self.assertNotIn("Projects/spaceflight", unit)
+
+    def test_teardown_skips_when_plugin_present(self) -> None:
+        from spaceflight import teardown as td
+
+        with mock.patch.object(td, "plugin_present", return_value=True):
+            with mock.patch.object(td, "was_plugin_managed", return_value=True):
+                self.assertFalse(td.should_prune())
+                self.assertFalse(td.prune_if_plugin_gone())
+
+    def test_teardown_runs_when_plugin_gone(self) -> None:
+        from spaceflight import teardown as td
+
+        with mock.patch.object(td, "plugin_present", return_value=False):
+            with mock.patch.object(td, "was_plugin_managed", return_value=True):
+                with mock.patch.object(td, "uninstall_services", return_value={"ok": True}) as stop:
+                    self.assertTrue(td.should_prune())
+                    self.assertTrue(td.prune_if_plugin_gone())
+                    stop.assert_called_once()
 
     def test_cli_generate_topic(self) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": str(ROOT)}

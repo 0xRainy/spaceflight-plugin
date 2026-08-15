@@ -136,6 +136,11 @@ class Daemon:
         if not c_assert(self.poll_sec > 0, "poll_sec positive"):
             return
         try:
+            from .teardown import prune_if_plugin_gone
+
+            if prune_if_plugin_gone():
+                self._stop = True
+                return
             now_t = time.time()
             launches: list | None = self._emit_from_cache()
             launches = self._maybe_net_refresh(now_t, launches)
