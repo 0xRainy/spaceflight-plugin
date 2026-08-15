@@ -38,11 +38,23 @@ systemctl --user restart spaceflight.service 2>/dev/null || true
 # Seed cache so waybar has data immediately
 "$BIN_DIR/spaceflight" refresh || true
 
+# Offer Omarchy Quattro plugin if omarchy is present
+PLUGIN_ID="0xrainy.spaceflight"
+PLUGIN_DST="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/$PLUGIN_ID"
+if command -v omarchy >/dev/null 2>&1; then
+  mkdir -p "$(dirname "$PLUGIN_DST")"
+  if [[ ! -e "$PLUGIN_DST" ]]; then
+    ln -sfn "$ROOT" "$PLUGIN_DST"
+  fi
+  omarchy plugin enable "$PLUGIN_ID" center >/dev/null 2>&1 || true
+fi
+
 echo ""
 echo "Installed:"
 echo "  CLI:     $BIN_DIR/spaceflight"
 echo "  Waybar:  $WAYBAR_SCRIPTS/spaceflight-waybar"
 echo "  Service: spaceflight.service (enabled)"
+echo "  Plugin:  $PLUGIN_ID (Omarchy Quattro — click the bar for details)"
 echo "  Config:  $CFG_DIR/config.toml   (local secrets — never commit)"
 echo ""
 echo "Add this block to $WAYBAR_DIR/config.jsonc (e.g. modules-center or modules-right):"

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "0xrainy.spaceflight",
+  "name": "Spaceflight",
+  "version": "1.0.0",
+  "author": "0xRainy",
+  "license": "MIT",
+  "description": "Live rocket launch countdown for the Omarchy Quattro bar — click for mission details, queue, NET, and window. Optional TUI and ntfy phone alerts.",
+  "homepage": "https://0xrainy.github.io/spaceflight-tui/",
+  "repository": "https://github.com/0xRainy/spaceflight-tui",
+  "keywords": [
+    "launch",
+    "rocket",
+    "spacex",
+    "countdown",
+    "bar"
+  ],
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Widget.qml"
+  },
+  "barWidget": {
+    "displayName": "Spaceflight",
+    "description": "Launch countdown pill; click opens mission card (no hover tooltip)",
+    "category": "Info",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "refreshMs": 1000,
+      "showProvider": true
+    },
+    "schema": [
+      {
+        "key": "refreshMs",
+        "type": "integer",
+        "label": "Bar refresh interval (milliseconds)",
+        "min": 250,
+        "max": 10000,
+        "step": 250,
+        "defaultValue": 1000
+      },
+      {
+        "key": "showProvider",
+        "type": "boolean",
+        "label": "Show provider abbreviation on the bar",
+        "defaultValue": true
+      }
+    ]
+  }
+}

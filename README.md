@@ -1,40 +1,61 @@
-# Spaceflight CLI
+# Spaceflight
 
-Flashy terminal **mission control** for rocket launches — live T-countdowns, stage timelines, Kitty/Ghostty graphics, Waybar module, desktop notifications, and optional phone push via [ntfy](https://ntfy.sh).
+Flashy **mission control** for rocket launches — Omarchy Quattro bar plugin, terminal TUI, desktop alerts, and optional phone push via [ntfy](https://ntfy.sh).
 
-**[Project site →](https://0xrainy.github.io/spaceflight-tui/)** · live countdown preview, features, one-minute install.
+**[Project site →](https://0xrainy.github.io/spaceflight-tui/)** · live screenshots, Power of Ten, one-minute install.
 
-**Version 1.0.0** — codebase follows Gerard Holzmann’s [**Power of Ten**](https://spinroot.com/gerard/pdf/P10.pdf) rules (NASA/JPL-inspired), adapted for Python. See [`docs/POWER_OF_TEN.md`](docs/POWER_OF_TEN.md).
+Listed for **[Omarchy Quattro](https://omarchyplugins.com/)** as plugin id `0xrainy.spaceflight`. Click the bar pill for a mission card (queue, NET local/UTC, window, Now/Next stages). Right-click opens the TUI.
+
+**Version 1.0.0** — Gerard Holzmann’s [**Power of Ten**](https://spinroot.com/gerard/pdf/P10.pdf) (NASA/JPL), adapted for Python. See [`docs/POWER_OF_TEN.md`](docs/POWER_OF_TEN.md).
 
 ```bash
-PYTHONPATH=. python3 tools/check_p10.py          # 0 findings
+PYTHONPATH=. python3 tools/check_p10.py
 PYTHONPATH=. python3 -m unittest discover -s tests -v
 ```
 
-## Install (Linux)
+## Install (Omarchy Quattro)
+
+```bash
+omarchy plugin add https://github.com/0xRainy/spaceflight-tui --enable
+# then wire the CLI + daemon (one-time)
+bash ~/.config/omarchy/plugins/0xrainy.spaceflight/scripts/install.sh
+```
+
+Or from a clone:
 
 ```bash
 git clone https://github.com/0xRainy/spaceflight-tui.git
 cd spaceflight-tui
 bash scripts/install.sh
+omarchy plugin add "$(pwd)" --enable
+omarchy plugin enable 0xrainy.spaceflight center
 ```
 
-Installs:
+`install.sh` never overwrites an existing `~/.config/spaceflight/config.toml` (that file may hold ntfy secrets).
 
-| Piece | Where |
-|-------|--------|
-| CLI | `~/.local/bin/spaceflight` |
-| Daemon | `systemctl --user` → `spaceflight.service` |
-| Waybar helper | `~/.config/waybar/scripts/spaceflight-waybar` |
-| Config | `~/.config/spaceflight/config.toml` (**local only**) |
+## Uninstall
 
 ```bash
-spaceflight              # mission-control TUI
-spaceflight refresh      # fetch / update cache
-spaceflight setup        # ntfy phone wizard
+omarchy plugin disable 0xrainy.spaceflight
+omarchy plugin remove 0xrainy.spaceflight --yes
+systemctl --user disable --now spaceflight.service
+rm -f ~/.local/bin/spaceflight
 ```
 
-Requirements: **Python 3.11+**, `requests`, `notify-send` (desktop alerts), optional **Waybar** / Omarchy Quattro + Kitty/Ghostty for images.
+User config and cache stay in `~/.config/spaceflight/` and `~/.cache/spaceflight/` until you delete them.
+
+## After install
+
+| Command | What |
+|---------|------|
+| Click the bar rocket | Mission card (replaces hover tooltip) |
+| Right-click the bar | Open TUI |
+| Middle-click | `spaceflight refresh` |
+| `spaceflight` | Mission-control TUI |
+| `spaceflight setup` | ntfy phone wizard |
+| `n` in TUI | Toggle stage notification spam |
+
+Requirements: **Python 3.11+**, `requests`, `notify-send` (desktop alerts). Optional: Kitty/Ghostty for TUI images. Waybar still works via `scripts/spaceflight-waybar`.
 
 ### First-install onboarding (ntfy phone alerts)
 

@@ -43,7 +43,7 @@
           <div class="hero-copy">
             <div class="eyebrow">
               <span class="pulse" aria-hidden="true"></span>
-              Live mission control · Linux TUI
+              Live mission control · Omarchy Quattro plugin + TUI
             </div>
             <h1>
               Feel every
@@ -52,8 +52,9 @@
             </h1>
             <p class="hero-lead">
               Spaceflight turns your terminal into a launch desk — unit-card countdowns,
-              live stream + weather radar, stage timelines, your status bar (Waybar or Omarchy
-              Quattro), and optional phone pushes so you never miss a window.
+              live stream + weather radar, stage timelines, an
+              <strong>Omarchy Quattro</strong> bar plugin (click for a mission card — no hover
+              tooltip), Waybar, and optional phone pushes so you never miss a window.
             </p>
             <div class="hero-cta">
               <a class="btn btn-primary" href="#install">Install in one minute</a>
@@ -330,13 +331,17 @@
           <div class="section-head">
             <h2 id="install-title">From clone to countdown</h2>
             <p>
-              Linux-first. One script wires the CLI, user daemon, and status-bar helper
-              (Waybar / Omarchy Quattro-ready) — then offers the phone wizard if you want it.
+              Linux-first. On Omarchy Quattro, add the plugin then run the installer for the
+              CLI, daemon, and ntfy wizard. Click the bar pill for launch details.
             </p>
           </div>
 
           <div class="install-box">
-            <pre aria-label="Install commands"><span class="cmt"># clone &amp; install</span>
+            <pre aria-label="Install commands"><span class="cmt"># Omarchy Quattro plugin</span>
+<span class="cmd">omarchy plugin add https://github.com/0xRainy/spaceflight-tui --enable</span>
+<span class="cmd">bash ~/.config/omarchy/plugins/0xrainy.spaceflight/scripts/install.sh</span>
+
+<span class="cmt"># or clone &amp; install</span>
 <span class="cmd">git clone https://github.com/0xRainy/spaceflight-tui.git</span>
 <span class="cmd">cd spaceflight-tui</span>
 <span class="cmd">bash scripts/install.sh</span>
@@ -348,7 +353,7 @@
 <span class="cmd">spaceflight setup</span>          <span class="cmt"># ntfy phone wizard</span>
 <span class="cmd">spaceflight notify-test</span>    <span class="cmt"># desktop smoke test</span></pre>
             <div class="install-actions">
-              <span class="install-note">Requires Python 3.11+ · systemd user session · optional Waybar or Omarchy Quattro bar</span>
+              <span class="install-note">Requires Python 3.11+ · systemd user session · Omarchy Quattro or Waybar</span>
               <div style="display: flex; gap: 0.5rem; flex-wrap: wrap">
                 <button type="button" class="btn btn-ghost" id="copy-install">Copy install</button>
                 <a class="btn btn-primary" href="https://github.com/0xRainy/spaceflight-tui">Open repository</a>
@@ -375,8 +380,8 @@
               <div class="step-num">03</div>
               <h3>Watch the clock</h3>
               <p>
-                Open the TUI, drop the module on Waybar or Omarchy Quattro (or any script-friendly
-                bar), and let the daemon handle the rest.
+                Click the Quattro bar pill for NET, window, and queue. Right-click opens the TUI.
+                Waybar still works if you prefer hover tooltips.
               </p>
             </div>
           </div>

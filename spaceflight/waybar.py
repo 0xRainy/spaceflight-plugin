@@ -684,6 +684,96 @@ def _percentage_for(featured: Launch | None, now: datetime) -> int:
     return 0
 
 
+def _panel_featured(L: Launch, now: datetime) -> dict:
+    """Structured featured launch for the Omarchy click panel."""
+    if not c_assert(L is not None and now is not None, "panel featured args"):
+        return {}
+    if not c_assert(hasattr(L, "id"), "launch shape"):
+        return {}
+    stream = L.primary_stream()
+    cur = L.current_stage(now)
+    nxt = L.next_stage(now)
+    wx = ""
+    line = _tooltip_weather_line(L)
+    if line:
+        wx = line
+    return {
+        "id": L.id or "",
+        "name": L.short_name(),
+        "vehicle": L.vehicle_name(),
+        "provider": L.provider or "",
+        "provider_abbr": provider_abbr(L),
+        "status": L.status_abbrev or L.status or "",
+        "countdown": L.countdown_label(now, precise=True),
+        "pad": L.pad or "",
+        "location": L.location or "",
+        "net_local": L.net_local_str(),
+        "net_utc": L.net_utc_str(),
+        "window": L.window_local_str(),
+        "precision": L.net_precision or "",
+        "probability": L.probability,
+        "live": bool(L.webcast_live),
+        "hold": bool(L.is_hold()),
+        "scrub": bool(L.is_scrub()),
+        "stage_now": (cur.description if cur else ""),
+        "stage_next": (nxt.description if nxt else ""),
+        "stream_title": (stream.title if stream else ""),
+        "stream_url": (stream.url if stream else ""),
+        "weather": wx,
+        "glyph": _glyph(L),
+    }
+
+
+def _panel_upcoming(launches: list[Launch], featured: Launch | None, now: datetime) -> list[dict]:
+    """Upcoming queue rows for the Omarchy click panel."""
+    if not c_assert(isinstance(launches, list), "launches list"):
+        return []
+    if not c_assert(now is not None, "now required"):
+        return []
+    rows: list[dict] = []
+    for L in take_at_most(launches, MAX_LAUNCHES):  # p10: bounded
+        if featured is not None and L is featured:
+            continue
+        if not L.is_upcoming(now) or not _is_active_for_waybar(L):
+            continue
+        rows.append(
+            {
+                "id": L.id or "",
+                "name": _short(L.short_name(), 22),
+                "provider_abbr": provider_abbr(L),
+                "countdown": L.countdown_label(now, precise=True),
+                "status": (L.status_abbrev or "?")[:8],
+                "glyph": _glyph(L),
+            }
+        )
+        if len(rows) >= MAX_UPCOMING_SHOW:
+            break
+    return take_at_most(rows, MAX_UPCOMING_SHOW)
+
+
+def _panel_payload(
+    launches: list[Launch],
+    featured: Launch | None,
+    meta: dict,
+    now: datetime,
+) -> dict:
+    """Click-panel body (replaces hover tooltip for Omarchy Quattro)."""
+    if not c_assert(isinstance(launches, list), "launches list"):
+        return {"ok": False, "upcoming": []}
+    if not c_assert(now is not None, "now required"):
+        return {"ok": False, "upcoming": []}
+    age = None
+    if isinstance(meta, dict):
+        age = meta.get("age_sec")
+    return {
+        "ok": featured is not None,
+        "featured": _panel_featured(featured, now) if featured is not None else {},
+        "upcoming": _panel_upcoming(launches, featured, now),
+        "age_sec": age,
+        "onboard": featured is None,
+    }
+
+
 def build_waybar_payload(
     launches: list[Launch] | None = None,
     *,
@@ -715,6 +805,7 @@ def build_waybar_payload(
         "class": cls,
         "alt": cls,
         "percentage": _percentage_for(featured, now),
+        "panel": _panel_payload(launches, featured, meta if isinstance(meta, dict) else {}, now),
     }
 
 
