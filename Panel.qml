@@ -5,7 +5,7 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Click card: mission details only. First-run setup is a terminal, not this panel.
+// Click card: same layout as the original Waybar hover popup.
 Panel {
   id: root
   moduleName: "0xrainy.spaceflight"
@@ -27,6 +27,12 @@ Panel {
     if (root.settings && typeof root.settings.refreshMs !== "undefined")
       n = Number(root.settings.refreshMs)
     return Model.clampInt(n, 250, 10000, 1000)
+  }
+
+  readonly property string cardFont: {
+    if (root.bar && root.bar.fontFamily)
+      return String(root.bar.fontFamily)
+    return "CaskaydiaCove Nerd Font Mono, JetBrainsMono Nerd Font, monospace"
   }
 
   function setCenterHoverRevealSuppressed(value) {
@@ -122,8 +128,15 @@ Panel {
     open: root.opened
     centerOnBar: true
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(420))
+    contentWidth: panel.fittedContentWidth(Math.max(Style.space(380), cardMetrics.width + Style.space(32)))
     contentHeight: panel.fittedContentHeight(bodyCol.implicitHeight + Style.space(16))
+
+    TextMetrics {
+      id: cardMetrics
+      font.family: root.cardFont
+      font.pixelSize: Style.font.small
+      text: root.state.tooltip || "🚀  SPACEFLIGHT"
+    }
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -142,22 +155,24 @@ Panel {
           id: bodyCol
           width: parent.width
           spacing: Style.space(8)
-          leftPadding: Style.space(16)
-          rightPadding: Style.space(16)
-          topPadding: Style.space(12)
-          bottomPadding: Style.space(12)
+          leftPadding: Style.space(14)
+          rightPadding: Style.space(14)
+          topPadding: Style.space(10)
+          bottomPadding: Style.space(10)
 
           Text {
+            visible: root.state.tooltip !== ""
             width: parent.width - parent.leftPadding - parent.rightPadding
-            text: "SPACEFLIGHT  ·  1.0.4"
+            text: root.state.tooltip
             color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
+            font.family: root.cardFont
             font.pixelSize: Style.font.small
-            font.letterSpacing: 1.2
+            wrapMode: Text.NoWrap
+            lineHeight: 1.12
           }
 
           Text {
-            visible: !root.state.ok
+            visible: root.state.tooltip === "" && !root.state.ok
             width: parent.width - parent.leftPadding - parent.rightPadding
             wrapMode: Text.WordWrap
             text: "Finish setup in the same terminal as omarchy plugin add. If that is gone, tap Run setup."
@@ -165,139 +180,6 @@ Panel {
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.body
             opacity: 0.8
-          }
-
-          Text {
-            visible: root.state.ok
-            width: parent.width - parent.leftPadding - parent.rightPadding
-            wrapMode: Text.WordWrap
-            text: {
-              var f = root.state.featured || {}
-              return (f.glyph || "🚀") + "  " + (f.provider_abbr || "") + "  " + (f.countdown || "")
-            }
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.display
-            font.bold: true
-          }
-
-          Text {
-            visible: root.state.ok
-            width: parent.width - parent.leftPadding - parent.rightPadding
-            wrapMode: Text.WordWrap
-            text: Model.featuredName(root.state.featured)
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.body
-            font.bold: true
-          }
-
-          Text {
-            visible: root.state.ok
-            width: parent.width - parent.leftPadding - parent.rightPadding
-            wrapMode: Text.WordWrap
-            text: {
-              var f = root.state.featured || {}
-              var bits = []
-              if (f.vehicle)
-                bits.push(f.vehicle)
-              if (f.status)
-                bits.push(f.status)
-              if (f.live)
-                bits.push("LIVE")
-              if (f.hold)
-                bits.push("HOLD")
-              if (f.scrub)
-                bits.push("SCRUB")
-              return bits.join("  ·  ")
-            }
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.small
-            opacity: 0.75
-          }
-
-          Text {
-            visible: root.state.ok && Model.locationLine(root.state.featured) !== ""
-            width: parent.width - parent.leftPadding - parent.rightPadding
-            wrapMode: Text.WordWrap
-            text: Model.locationLine(root.state.featured)
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.small
-            opacity: 0.75
-          }
-
-          Text {
-            visible: root.state.ok && root.state.featured && root.state.featured.net_local
-            width: parent.width - parent.leftPadding - parent.rightPadding
-            wrapMode: Text.WordWrap
-            text: {
-              var f = root.state.featured || {}
-              return "NET  " + (f.net_local || "") + "\n     " + (f.net_utc || "")
-            }
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.small
-          }
-
-          Text {
-            visible: root.state.ok && root.state.featured && root.state.featured.window
-            width: parent.width - parent.leftPadding - parent.rightPadding
-            wrapMode: Text.WordWrap
-            text: "Window  " + ((root.state.featured && root.state.featured.window) || "")
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.small
-          }
-
-          Text {
-            visible: root.state.ok && root.state.featured && (root.state.featured.stage_now || root.state.featured.stage_next)
-            width: parent.width - parent.leftPadding - parent.rightPadding
-            wrapMode: Text.WordWrap
-            text: {
-              var f = root.state.featured || {}
-              var lines = []
-              if (f.stage_now)
-                lines.push("Now   ·  " + f.stage_now)
-              if (f.stage_next)
-                lines.push("Next  ·  " + f.stage_next)
-              return lines.join("\n")
-            }
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.small
-          }
-
-          Repeater {
-            model: root.state.upcoming || []
-            delegate: Text {
-              required property var modelData
-              required property int index
-              width: bodyCol.width - bodyCol.leftPadding - bodyCol.rightPadding
-              visible: index < Model.MAX_UPCOMING
-              text: (modelData.glyph || "·") + "  "
-                    + (modelData.provider_abbr || "") + "  "
-                    + (modelData.countdown || "") + "  "
-                    + (modelData.status || "") + "  "
-                    + (modelData.name || "")
-              color: root.bar ? root.bar.foreground : Color.foreground
-              font.family: root.bar ? root.bar.fontFamily : Style.font.family
-              font.pixelSize: Style.font.small
-              opacity: 0.8
-              wrapMode: Text.NoWrap
-              elide: Text.ElideRight
-            }
-          }
-
-          Text {
-            width: parent.width - parent.leftPadding - parent.rightPadding
-            text: "data " + Model.ageLabel(root.state.age_sec)
-                  + "   ·   right-click TUI   ·   s settings in TUI"
-            color: root.bar ? root.bar.foreground : Color.foreground
-            font.family: root.bar ? root.bar.fontFamily : Style.font.family
-            font.pixelSize: Style.font.small
-            opacity: 0.55
           }
 
           Row {

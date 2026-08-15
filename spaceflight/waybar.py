@@ -820,6 +820,9 @@ def build_waybar_payload(
     cls = _status_class(featured) if featured else "unknown"
     text = _bar_text(featured, now)
     tooltip = _tooltip(launches, featured, meta, now)
+    panel = _panel_payload(launches, featured, meta if isinstance(meta, dict) else {}, now)
+    if isinstance(panel, dict):
+        panel["card"] = tooltip
 
     return {
         "text": text,
@@ -827,7 +830,7 @@ def build_waybar_payload(
         "class": cls,
         "alt": cls,
         "percentage": _percentage_for(featured, now),
-        "panel": _panel_payload(launches, featured, meta if isinstance(meta, dict) else {}, now),
+        "panel": panel,
     }
 
 

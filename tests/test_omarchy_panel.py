@@ -51,6 +51,7 @@ class TestPanelPayload(unittest.TestCase):
         self.assertIn("panel", payload)
         panel = payload["panel"]
         self.assertTrue(panel.get("ok"))
+        self.assertTrue(str(panel.get("card") or "").startswith("🚀") or "SPACEFLIGHT" in str(panel.get("card") or ""))
         feat = panel.get("featured") or {}
         self.assertEqual(feat.get("id"), "feat-1")
         self.assertIn("BlueBird", feat.get("name") or "")
@@ -211,18 +212,21 @@ if (empty.ok) process.exit(2);
 const raw = JSON.stringify({
   text: '🚀  SPCX  T-1h',
   class: 'go',
+  tooltip: '🚀  SPACEFLIGHT\\n🛰️  BlueBird',
   panel: {
     ok: true,
     onboard: false,
     featured: { name: 'BlueBird', net_utc: '12:00 UTC' },
     upcoming: [{ id: 'a' }, { id: 'b' }],
-    age_sec: 12
+    age_sec: 12,
+    card: '🚀  SPACEFLIGHT\\n🛰️  BlueBird'
   }
 });
 const p = m.parseCache(raw);
 if (!p.ok || p.text.indexOf('SPCX') < 0) process.exit(3);
 if (p.upcoming.length !== 2) process.exit(4);
 if (m.ageLabel(12) !== '12s') process.exit(5);
+if (!p.tooltip || p.tooltip.indexOf('SPACEFLIGHT') < 0) process.exit(6);
 console.log('ok');
 """
         r = subprocess.run(

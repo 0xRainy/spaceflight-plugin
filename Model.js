@@ -33,7 +33,8 @@ function emptyPanel() {
     text: "🚀  …",
     klass: "pending",
     bar_style: "text",
-    wizard_needed: true
+    wizard_needed: true,
+    tooltip: ""
   }
 }
 
@@ -63,6 +64,7 @@ function parseCache(raw) {
   var style = String(panel.bar_style || "text")
   if (style !== "icon" && style !== "text")
     style = "text"
+  var tip = String(panel.card || data.tooltip || "")
   return {
     ok: panel.ok === true,
     onboard: panel.onboard === true || !panel.ok,
@@ -72,7 +74,8 @@ function parseCache(raw) {
     text: String(data.text || "🚀  …"),
     klass: String(data["class"] || data.alt || "unknown"),
     bar_style: style,
-    wizard_needed: panel.wizard_needed === true
+    wizard_needed: panel.wizard_needed === true,
+    tooltip: tip
   }
 }
 
