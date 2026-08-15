@@ -37,9 +37,7 @@ Click the bar rocket for the mission card. Change look, place, or ntfy later: pr
 omarchy plugin remove 0xrainy.spaceflight --yes
 ```
 
-That also stops `spaceflight.service` (desktop + ntfy alerts) and removes the CLI symlink. Same if you remove it from the Omarchy menu.
-
-User config and cache stay in `~/.config/spaceflight/` and `~/.cache/spaceflight/` until you delete them.
+That also stops `spaceflight.service`, removes the CLI symlink, and **wipes local prefs** (bar look, ntfy topic, onboard flags, cache). Same if you remove it from the Omarchy menu. The next `omarchy plugin add` runs the full setup again.
 
 ## After install
 

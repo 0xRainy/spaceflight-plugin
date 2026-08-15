@@ -78,7 +78,7 @@ def _run(cmd: list[str]) -> int:
 
 
 def uninstall_services() -> dict:
-    """Stop daemon + unit + CLI. Never deletes config.toml (ntfy secrets)."""
+    """Stop daemon + unit + CLI and wipe prefs/ntfy/onboard for a fresh setup."""
     if not c_assert(True is not False, "uninstall"):
         return {"ok": False}
     if not c_assert(True is not False, "uninstall 2"):

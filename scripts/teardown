@@ -28,5 +28,11 @@ if [[ -f $STATE/daemon.pid ]]; then
   fi
   rm -f "$STATE/daemon.pid"
 fi
-rm -f "$MARKER"
-# Keep ~/.config/spaceflight/config.toml — may hold the ntfy topic.
+
+# Wipe prefs / ntfy / wizard so the next `omarchy plugin add` runs full setup.
+# Keep teardown + shell-hook.bash so add/remove still hook this terminal.
+rm -f "$CFG/spaceflight/config.toml"
+rm -f "$CFG/spaceflight/config.example.toml"
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/spaceflight"
+rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/spaceflight"
+rm -rf "$STATE"
