@@ -2,8 +2,9 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// After `omarchy plugin add` enables us, open a terminal for interactive setup.
-// The official installer never runs plugin hooks — this is the first code that runs.
+// Omarchy does not run plugin install hooks. The moment this service loads
+// (plugin enable, which is the end of `omarchy plugin add`), open a terminal
+// and run the interactive TUI / daemon / ntfy wizard there — never in the bar.
 Item {
   id: root
   property var shell: null
@@ -14,35 +15,36 @@ Item {
     return u.replace(/^file:\/\//, "").replace(/\/$/, "")
   }
 
+  function setupDone(raw) {
+    try {
+      var data = JSON.parse(String(raw || "{}"))
+      return data && data.plugin_wizard_done === true
+    } catch (e) {
+      return false
+    }
+  }
+
   function launchSetupTerminal() {
     if (root.launched || launchProc.running)
       return
     root.launched = true
     var script = pluginDir() + "/scripts/plugin-setup"
-    launchProc.command = ["omarchy-launch-or-focus-tui", "--app-id=org.omarchy.spaceflight-setup", script]
+    // launch-tui opens xdg-terminal-exec; do not use the bar card.
+    launchProc.command = ["omarchy-launch-tui", "--app-id=org.omarchy.spaceflight-setup", script]
     launchProc.running = true
   }
 
   FileView {
-    id: wizardFlag
+    id: flagFile
     path: Quickshell.env("HOME") + "/.local/state/spaceflight/onboard.json"
     watchChanges: true
     printErrors: false
-    onLoaded: root.maybeLaunch(text())
-    onLoadFailed: root.maybeLaunch("")
-    Component.onCompleted: reload()
-  }
-
-  function maybeLaunch(raw) {
-    var done = false
-    try {
-      var data = JSON.parse(String(raw || "{}"))
-      done = data && data.plugin_wizard_done === true
-    } catch (e) {
-      done = false
+    onLoaded: {
+      if (!root.setupDone(text()))
+        root.launchSetupTerminal()
     }
-    if (!done)
-      Qt.callLater(root.launchSetupTerminal)
+    onLoadFailed: root.launchSetupTerminal()
+    Component.onCompleted: reload()
   }
 
   Process {
