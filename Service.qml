@@ -2,8 +2,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Silent first-boot only. Setup questions run in the `omarchy plugin add`
-// terminal (shell hook / continue-setup). Never open extra terminals.
+// First-boot: install CLI/daemon, then finish setup in the installer TTY
+// or one fallback terminal. Does not edit system files.
 Item {
   id: root
   property var shell: null
