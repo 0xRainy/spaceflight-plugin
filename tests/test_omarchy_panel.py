@@ -119,6 +119,18 @@ class TestBarSettingsAndWizard(unittest.TestCase):
                     mark_plugin_wizard_done()
                     self.assertFalse(needs_plugin_wizard())
 
+    def test_plugin_setup_asks_bar_then_installs(self) -> None:
+        from io import StringIO
+
+        from spaceflight.plugin_setup import _ask_bar_section, _ask_bar_style
+
+        style = _ask_bar_style(StringIO("1\n"), StringIO())
+        self.assertEqual(style, "icon")
+        style = _ask_bar_style(StringIO("\n"), StringIO())
+        self.assertEqual(style, "text")
+        self.assertEqual(_ask_bar_section(StringIO("3\n"), StringIO()), "right")
+        self.assertEqual(_ask_bar_section(StringIO("\n"), StringIO()), "center")
+
     def test_cli_generate_topic(self) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": str(ROOT)}
         r = subprocess.run(

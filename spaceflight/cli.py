@@ -396,6 +396,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_setup_parser(sub)
     _add_bootstrap_parser(sub)
     _add_settings_parser(sub)
+    ps = sub.add_parser("plugin-setup", help="Interactive first-run (TUI + daemon + ntfy)")
+    ps.set_defaults(func=cmd_plugin_setup)
     return p
 
 
@@ -461,6 +463,16 @@ def cmd_bootstrap(_args: argparse.Namespace) -> int:
     return int(run() or 0)
 
 
+def cmd_plugin_setup(_args: argparse.Namespace) -> int:
+    if not c_assert(_args is not None, "args"):
+        return 2
+    if not c_assert(True is not False, "plugin-setup cmd"):
+        return 2
+    from .plugin_setup import run
+
+    return int(run() or 0)
+
+
 def cmd_settings(args: argparse.Namespace) -> int:
     if not c_assert(args is not None, "args"):
         return 2
@@ -509,6 +521,7 @@ _KNOWN_CMDS = (
     "setup",
     "bootstrap",
     "settings",
+    "plugin-setup",
 )
 
 

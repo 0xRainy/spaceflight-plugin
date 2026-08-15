@@ -76,8 +76,14 @@ Panel {
     root.barText = next.text
     root.barClass = next.klass
     root.barStyle = next.bar_style || "text"
-    if (next.wizard_needed && !root.opened)
-      Qt.callLater(function() { root.wizardOpen = true; root.open() })
+  }
+
+  function launchTerminalSetup() {
+    var script = pluginDir() + "/scripts/plugin-setup"
+    if (root.bar)
+      root.bar.run("omarchy-launch-or-focus-tui --app-id=org.omarchy.spaceflight-setup " + script)
+    else
+      root.runPy(["plugin-setup"])
   }
 
   function pluginDir() {
@@ -359,7 +365,7 @@ Panel {
             visible: !root.wizardOpen && (root.state.onboard || !root.state.ok)
             width: parent.width - parent.leftPadding - parent.rightPadding
             wrapMode: Text.WordWrap
-            text: "No launch cache yet. Install the CLI, enable the user daemon, then refresh."
+            text: "Setup runs in a terminal after you add the plugin. If that window isn't open, tap below."
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.body
@@ -541,7 +547,7 @@ Panel {
               Text {
                 id: setupLab
                 anchors.centerIn: parent
-                text: "Phone setup"
+                text: "Run setup in terminal"
                 color: root.bar ? root.bar.foreground : Color.foreground
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
                 font.pixelSize: Style.font.small
@@ -549,7 +555,7 @@ Panel {
               MouseArea {
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: root.runSetup()
+                onClicked: root.launchTerminalSetup()
               }
             }
 

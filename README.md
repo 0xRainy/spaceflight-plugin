@@ -21,13 +21,13 @@ This is the only step:
 omarchy plugin add https://github.com/0xRainy/spaceflight-plugin
 ```
 
-Omarchy asks **left / center / right**. After enable, the plugin:
+Omarchy asks **left / center / right** for the pill. A **terminal then opens** and walks you through:
 
-1. Installs the `spaceflight` CLI and user daemon (no extra command).
-2. Opens a first-run card: **🚀 icon** vs **countdown text**, then phone alerts.
-3. Phone alerts use the free **ntfy** app. The topic is a unique secret key — generate one or paste your own, subscribe in the app, then confirm.
+1. Installing the TUI and the user daemon (launch cache + alerts).
+2. Bar look: **🚀 icon** or **countdown text**.
+3. Optional **ntfy** phone alerts — you need the free ntfy app; the topic is a secret key. Generate one or paste your own, subscribe on the phone, then confirm.
 
-Change bar place, look, or ntfy later: press **`s`** in the TUI.
+Change bar place, look, or ntfy later: press **`s`** in the TUI. If the terminal didn't appear, click the bar → **Run setup in terminal**.
 
 `config.toml` is never overwritten if it already exists (it may hold ntfy secrets).
 

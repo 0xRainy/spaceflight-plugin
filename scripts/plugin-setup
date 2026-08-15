@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Interactive first-run after `omarchy plugin add` (opened in a terminal).
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="${ROOT}${PYTHONPATH:+:$PYTHONPATH}"
+exec python3 -m spaceflight plugin-setup
