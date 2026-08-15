@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fallback only: open ONE setup terminal if the user taps Run setup.
+# Open first-run setup in a terminal (bar click).
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/spaceflight"

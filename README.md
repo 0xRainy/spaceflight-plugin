@@ -15,21 +15,16 @@ PYTHONPATH=. python3 -m unittest discover -s tests -v
 
 ## Install (Omarchy Quattro)
 
-This is the only step:
-
 ```bash
 omarchy plugin add https://github.com/0xRainy/spaceflight-plugin
 ```
 
-Omarchy asks **left / center / right** for the pill. **This same terminal** then continues:
+Omarchy asks **left / center / right**. Then **click the bar rocket** (`🚀  setup`) to finish:
 
-1. Installing the TUI and the user daemon (launch cache + alerts).
-2. Bar look: **🚀 icon** or **countdown text**.
-3. Optional **ntfy** phone alerts — you need the free ntfy app; the topic is a secret key. Generate one or paste your own, subscribe on the phone, then confirm.
+1. Optional **background service** (live countdown + desktop alerts).
+2. Optional **ntfy** phone alerts (free app; the topic is a secret).
 
-Click the bar rocket for the mission card. Change look, place, or ntfy later: press **`s`** in the TUI.
-
-`config.toml` is never overwritten if it already exists (it may hold ntfy secrets).
+After that, click the rocket for the mission card. Press **`s`** in the TUI to change settings later.
 
 ## Uninstall
 

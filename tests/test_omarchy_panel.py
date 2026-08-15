@@ -132,31 +132,32 @@ class TestBarSettingsAndWizard(unittest.TestCase):
         self.assertEqual(_ask_bar_section(StringIO("3\n"), StringIO()), "right")
         self.assertEqual(_ask_bar_section(StringIO("\n"), StringIO()), "center")
 
-    def test_plugin_setup_skips_when_wizard_done(self) -> None:
+    def test_plugin_setup_asks_service_and_ntfy(self) -> None:
         from io import StringIO
         from unittest import mock
 
         from spaceflight import plugin_setup
 
-        with mock.patch.object(plugin_setup, "needs_plugin_wizard", return_value=False):
-            with mock.patch.object(plugin_setup, "_install_core", return_value={"ok": True}) as inst:
-                code = plugin_setup.run(inp=StringIO(""), out=StringIO())
+        with mock.patch.object(plugin_setup, "_install_cli", return_value={"ok": True}):
+            with mock.patch.object(plugin_setup, "_maybe_service"):
+                with mock.patch.object(plugin_setup, "_maybe_ntfy"):
+                    with mock.patch.object(plugin_setup, "_finish"):
+                        code = plugin_setup.run(inp=StringIO("\n"), out=StringIO())
         self.assertEqual(code, 0)
-        inst.assert_called_once()
+        yes = plugin_setup._ask_yes(StringIO("\n"), StringIO(), "Enable?", default_yes=True)
+        self.assertTrue(yes)
+        no = plugin_setup._ask_yes(StringIO("n\n"), StringIO(), "Enable?", default_yes=True)
+        self.assertFalse(no)
 
-    def test_qml_does_not_auto_launch_setup(self) -> None:
+    def test_click_bar_launches_setup_until_done(self) -> None:
         widget = (ROOT / "Widget.qml").read_text(encoding="utf-8")
         service = (ROOT / "Service.qml").read_text(encoding="utf-8")
-        self.assertNotIn("launch-setup", widget)
-        self.assertNotIn("maybeLaunchSetup", widget)
+        self.assertIn("launch-setup", widget)
+        self.assertIn("🚀  setup", widget)
+        self.assertNotIn("first-boot", service)
+        self.assertNotIn("ensure-setup", service)
         panel = (ROOT / "Panel.qml").read_text(encoding="utf-8")
         self.assertNotIn("TextMetrics", panel, "TextMetrics is not a QQuickItem; KeyboardPanel rejects it")
-        self.assertNotIn("launch-setup", service)
-        self.assertIn("first-boot", service)
-        boot = (ROOT / "scripts" / "first-boot").read_text(encoding="utf-8")
-        self.assertIn("ensure-setup", boot)
-        self.assertNotIn(".bashrc", boot)
-        self.assertTrue((ROOT / "scripts" / "ensure-setup").is_file())
         self.assertTrue((ROOT / "scripts" / "teardown").is_file())
         wipe = (ROOT / "scripts" / "teardown").read_text(encoding="utf-8")
         self.assertIn("config.toml", wipe)

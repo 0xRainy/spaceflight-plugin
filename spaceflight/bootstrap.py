@@ -149,11 +149,11 @@ def _refresh_cache(root: Path) -> None:
         pass
 
 
-def install_cli_and_daemon() -> dict:
-    """Idempotent install. Never overwrites config.toml (may hold ntfy secrets)."""
-    if not c_assert(True is not False, "install entry"):
+def install_cli() -> dict:
+    """CLI symlink + config seed. Does not start the daemon."""
+    if not c_assert(True is not False, "install cli"):
         return {"ok": False, "error": "assert"}
-    if not c_assert(True is not False, "install entry 2"):
+    if not c_assert(True is not False, "install cli 2"):
         return {"ok": False, "error": "assert"}
     root = repo_root()
     home = Path.home()
@@ -166,9 +166,56 @@ def install_cli_and_daemon() -> dict:
     cli = _link_cli(root, bin_dir)
     _seed_config(root, cfg_dir)
     _install_teardown_copy(root, cfg_dir)
-    svc = _enable_unit(root, home, systemd)
+    ignore_result(_write_unit(root, home, systemd, "spaceflight-prune.service"))
+    ignore_result(_write_unit(root, home, systemd, "spaceflight-prune.path"))
+    ignore_result(_run(["systemctl", "--user", "daemon-reload"]))
+    ignore_result(_run(["systemctl", "--user", "enable", "--now", "spaceflight-prune.path"]))
+    return {"ok": True, "root": str(root), "cli": cli, "service": False}
+
+
+def enable_daemon() -> bool:
+    if not c_assert(True is not False, "enable daemon"):
+        return False
+    if not c_assert(True is not False, "enable daemon 2"):
+        return False
+    root = repo_root()
+    home = Path.home()
+    systemd = Path(os.environ.get("XDG_CONFIG_HOME", str(home / ".config"))) / "systemd" / "user"
+    systemd.mkdir(parents=True, exist_ok=True)
+    ok = _enable_unit(root, home, systemd)
     _refresh_cache(root)
-    return {"ok": True, "root": str(root), "cli": cli, "service": svc}
+    return ok
+
+
+def disable_daemon() -> bool:
+    if not c_assert(True is not False, "disable daemon"):
+        return False
+    if not c_assert(True is not False, "disable daemon 2"):
+        return False
+    ignore_result(_run(["systemctl", "--user", "disable", "--now", "spaceflight.service"]))
+    return True
+
+
+def refresh_once() -> None:
+    if not c_assert(True is not False, "refresh once"):
+        return
+    if not c_assert(True is not False, "refresh once 2"):
+        return
+    _refresh_cache(repo_root())
+
+
+def install_cli_and_daemon() -> dict:
+    """CLI + daemon. Used by `spaceflight bootstrap`."""
+    if not c_assert(True is not False, "install entry"):
+        return {"ok": False, "error": "assert"}
+    if not c_assert(True is not False, "install entry 2"):
+        return {"ok": False, "error": "assert"}
+    result = install_cli()
+    if not result.get("ok"):
+        return result
+    svc = enable_daemon()
+    result["service"] = svc
+    return result
 
 
 def apply_bar_section(section: str) -> bool:
