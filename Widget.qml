@@ -14,6 +14,7 @@ BarWidget {
   property string barClass: "pending"
   property string displayStyle: "text"
   property bool setupComplete: false
+  property string pendingAction: ""
 
   function pluginDir() {
     var u = String(Qt.resolvedUrl("."))
@@ -29,11 +30,31 @@ BarWidget {
     }
   }
 
+  function flagPath() {
+    return Quickshell.env("HOME") + "/.local/state/spaceflight/onboard.json"
+  }
+
+  function applySetupFlag(raw) {
+    var done = root.readSetupDone(raw)
+    root.setupComplete = done
+    if (done)
+      root.refresh()
+    root.syncFromPanel()
+  }
+
   function launchSetup() {
     if (setupProc.running)
       return
     setupProc.command = ["/bin/bash", pluginDir() + "/scripts/launch-setup"]
     setupProc.running = true
+  }
+
+  function checkFlagThen(action) {
+    root.pendingAction = String(action || "")
+    if (flagCheck.running)
+      flagCheck.running = false
+    flagCheck.command = ["grep", "-F", "\"plugin_wizard_done\": true", root.flagPath()]
+    flagCheck.running = true
   }
 
   function injectPanel() {
@@ -123,19 +144,38 @@ BarWidget {
     path: Quickshell.env("HOME") + "/.local/state/spaceflight/onboard.json"
     watchChanges: true
     printErrors: false
-    onLoaded: {
-      root.setupComplete = root.readSetupDone(text())
-      root.syncFromPanel()
-    }
-    onLoadFailed: {
-      root.setupComplete = false
-      root.syncFromPanel()
-    }
+    onLoaded: root.applySetupFlag(text())
+    onLoadFailed: root.applySetupFlag("")
     Component.onCompleted: reload()
+  }
+
+  // FileView often misses onboard.json being created after first setup.
+  Timer {
+    interval: 750
+    running: !root.setupComplete
+    repeat: true
+    onTriggered: flagFile.reload()
   }
 
   Process {
     id: setupProc
+    onExited: flagFile.reload()
+  }
+
+  Process {
+    id: flagCheck
+    onExited: function(code) {
+      if (code === 0) {
+        root.applySetupFlag("{\"plugin_wizard_done\": true}")
+        if (root.pendingAction === "panel")
+          root.togglePanel()
+        else if (root.pendingAction === "tui")
+          root.bar.run("omarchy-launch-or-focus-tui " + root.pluginDir() + "/scripts/spaceflight")
+        return
+      }
+      root.applySetupFlag("")
+      root.launchSetup()
+    }
   }
 
   Loader {
@@ -175,10 +215,11 @@ BarWidget {
           return
         if (root.bar.hideTooltip)
           root.bar.hideTooltip(hit)
-        root.setupComplete = root.readSetupDone(flagFile.text())
         if (!root.setupComplete) {
-          if (mouse.button === Qt.LeftButton || mouse.button === Qt.RightButton)
-            root.launchSetup()
+          if (mouse.button === Qt.LeftButton)
+            root.checkFlagThen("panel")
+          else if (mouse.button === Qt.RightButton)
+            root.checkFlagThen("tui")
           return
         }
         if (mouse.button === Qt.RightButton)
