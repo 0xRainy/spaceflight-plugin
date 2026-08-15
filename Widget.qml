@@ -9,6 +9,7 @@ BarWidget {
 
   property string barText: "🚀  …"
   property string barClass: "pending"
+  property string displayStyle: "text"
 
   function injectPanel() {
     var target = panelLoader.item
@@ -33,6 +34,12 @@ BarWidget {
     }
     barText = String(p.barText || "🚀  …")
     barClass = String(p.barClass || "pending")
+    var st = ""
+    if (root.settings && root.settings.displayStyle)
+      st = String(root.settings.displayStyle)
+    if (!st && p.barStyle)
+      st = String(p.barStyle)
+    displayStyle = (st === "icon") ? "icon" : "text"
   }
 
   function refresh() {
@@ -97,7 +104,7 @@ BarWidget {
 
     Text {
       anchors.centerIn: parent
-      text: root.barText
+      text: root.displayStyle === "icon" ? "🚀" : root.barText
       color: root.bar ? root.bar.barForeground : Color.foreground
       font.family: root.bar ? root.bar.fontFamily : Style.font.family
       font.pixelSize: Style.font.body

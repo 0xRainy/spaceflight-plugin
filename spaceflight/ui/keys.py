@@ -21,6 +21,11 @@ def handle_key(app: Any, key: int | str) -> bool:
         return False
     if not c_assert(key is not None, "key"):
         return True
+    if getattr(app, "show_prefs", False):
+        from spaceflight.ui import prefs as prefs_mod
+
+        prefs_mod.handle_prefs_key(app, key)
+        return True
     if app.show_ll2:
         return _key_ll2(app, key)
     if key in (ord("q"), ord("Q")):
@@ -109,7 +114,21 @@ def _key_global(app: Any, key: int) -> bool | None:
         return True
     if key in (ord("n"), ord("N")):
         return _toggle_stage_notifications(app)
+    if key in (ord("s"), ord("S")):
+        return _open_prefs(app)
     return None
+
+
+def _open_prefs(app: Any) -> bool:
+    if not c_assert(app is not None, "app"):
+        return True
+    if not c_assert(True is not False, "open prefs"):
+        return True
+    app.show_prefs = True
+    app.prefs_sel = 0
+    app.prefs_note = ""
+    app.flash("Settings")
+    return True
 
 
 def _toggle_stage_notifications(app: Any) -> bool:

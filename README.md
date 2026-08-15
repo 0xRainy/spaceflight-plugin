@@ -15,23 +15,21 @@ PYTHONPATH=. python3 -m unittest discover -s tests -v
 
 ## Install (Omarchy Quattro)
 
-```bash
-omarchy plugin add https://github.com/0xRainy/spaceflight-tui --enable
-# then wire the CLI + daemon (one-time)
-bash ~/.config/omarchy/plugins/0xrainy.spaceflight/scripts/install.sh
-```
-
-Or from a clone:
+This is the only step:
 
 ```bash
-git clone https://github.com/0xRainy/spaceflight-tui.git
-cd spaceflight-tui
-bash scripts/install.sh
-omarchy plugin add "$(pwd)" --enable
-omarchy plugin enable 0xrainy.spaceflight center
+omarchy plugin add https://github.com/0xRainy/spaceflight-tui
 ```
 
-`install.sh` never overwrites an existing `~/.config/spaceflight/config.toml` (that file may hold ntfy secrets).
+Omarchy asks **left / center / right**. After enable, the plugin:
+
+1. Installs the `spaceflight` CLI and user daemon (no extra command).
+2. Opens a first-run card: **🚀 icon** vs **countdown text**, then phone alerts.
+3. Phone alerts use the free **ntfy** app. The topic is a unique secret key — generate one or paste your own, subscribe in the app, then confirm.
+
+Change bar place, look, or ntfy later: press **`s`** in the TUI.
+
+`config.toml` is never overwritten if it already exists (it may hold ntfy secrets).
 
 ## Uninstall
 

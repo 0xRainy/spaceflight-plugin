@@ -31,7 +31,9 @@ function emptyPanel() {
     upcoming: [],
     age_sec: null,
     text: "🚀  …",
-    klass: "pending"
+    klass: "pending",
+    bar_style: "text",
+    wizard_needed: true
   }
 }
 
@@ -58,6 +60,9 @@ function parseCache(raw) {
         up.push(src[i])
     }
   }
+  var style = String(panel.bar_style || "text")
+  if (style !== "icon" && style !== "text")
+    style = "text"
   return {
     ok: panel.ok === true,
     onboard: panel.onboard === true || !panel.ok,
@@ -65,7 +70,9 @@ function parseCache(raw) {
     upcoming: up,
     age_sec: panel.age_sec,
     text: String(data.text || "🚀  …"),
-    klass: String(data["class"] || data.alt || "unknown")
+    klass: String(data["class"] || data.alt || "unknown"),
+    bar_style: style,
+    wizard_needed: panel.wizard_needed === true
   }
 }
 

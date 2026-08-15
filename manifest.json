@@ -16,20 +16,23 @@
     "bar"
   ],
   "kinds": [
+    "service",
     "bar-widget"
   ],
+  "keepLoaded": true,
   "entryPoints": {
+    "service": "Service.qml",
     "barWidget": "Widget.qml"
   },
   "barWidget": {
     "displayName": "Spaceflight",
-    "description": "Launch countdown pill; click opens mission card (no hover tooltip)",
+    "description": "Launch countdown pill; click opens setup then a mission card",
     "category": "Info",
     "allowMultiple": false,
     "defaultSection": "center",
     "defaults": {
       "refreshMs": 1000,
-      "showProvider": true
+      "displayStyle": "text"
     },
     "schema": [
       {
@@ -42,10 +45,10 @@
         "defaultValue": 1000
       },
       {
-        "key": "showProvider",
-        "type": "boolean",
-        "label": "Show provider abbreviation on the bar",
-        "defaultValue": true
+        "key": "displayStyle",
+        "type": "string",
+        "label": "Bar look: icon (🚀) or text (countdown)",
+        "defaultValue": "text"
       }
     ]
   }

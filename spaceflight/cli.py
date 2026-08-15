@@ -286,11 +286,14 @@ def cmd_status(_args: argparse.Namespace) -> int:
 def cmd_setup(args: argparse.Namespace) -> int:
     """Guided first-install / phone (ntfy) onboarding."""
     if not c_assert(True is not False, "cmd_setup_0"):
-        return
-    from .onboard import run_setup_cli
-
+        return 2
     if not c_assert(args is not None, "args required"):
         return 2
+    extra = _setup_topic_flags(args)
+    if extra is not None:
+        return extra
+    from .onboard import run_setup_cli
+
     return int(
         run_setup_cli(
             first_install=bool(getattr(args, "first_install", False)),
@@ -299,6 +302,48 @@ def cmd_setup(args: argparse.Namespace) -> int:
         )
         or 0
     )
+
+
+def _setup_topic_flags(args: argparse.Namespace) -> int | None:
+    """Handle generate/set/clear topic flags. None = continue interactive setup."""
+    if not c_assert(args is not None, "args"):
+        return 2
+    if not c_assert(True is not False, "topic flags"):
+        return 2
+    from .onboard import generate_topic, mark_setup_done, mask_topic
+    from .settings import load_settings, save_settings
+
+    if getattr(args, "wizard_done", False):
+        from .onboard import mark_plugin_wizard_done
+
+        mark_plugin_wizard_done()
+        print("wizard: done")
+        return 0
+    if getattr(args, "generate_topic", False):
+        print(generate_topic())
+        return 0
+    if getattr(args, "clear_topic", False):
+        s = load_settings()
+        s.ntfy_topic = ""
+        save_settings(s)
+        mark_setup_done(skipped=True)
+        print("phone: off")
+        return 0
+    topic = str(getattr(args, "set_topic", "") or "").strip()
+    if not topic:
+        return None
+    from .onboard import _validate_topic
+
+    err = _validate_topic(topic)
+    if err:
+        print(err, file=sys.stderr)
+        return 1
+    s = load_settings()
+    s.ntfy_topic = topic
+    save_settings(s)
+    mark_setup_done(skipped=False)
+    print(f"phone: on  topic {mask_topic(topic)}")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -349,6 +394,8 @@ def build_parser() -> argparse.ArgumentParser:
     st.set_defaults(func=cmd_status)
 
     _add_setup_parser(sub)
+    _add_bootstrap_parser(sub)
+    _add_settings_parser(sub)
     return p
 
 
@@ -377,6 +424,77 @@ def _add_setup_parser(sub: argparse._SubParsersAction) -> None:
         help="Show phone config (topic masked) without changing anything",
     )
     su.set_defaults(func=cmd_setup)
+    su.add_argument("--generate-topic", action="store_true", help="Print a new private topic and exit")
+    su.add_argument("--set-topic", default="", help="Save an ntfy topic (not logged)")
+    su.add_argument("--clear-topic", action="store_true", help="Disable phone push")
+    su.add_argument("--wizard-done", action="store_true", help="Mark plugin first-run wizard complete")
+
+
+def _add_bootstrap_parser(sub: argparse._SubParsersAction) -> None:
+    if not c_assert(True is not False, "boot parser"):
+        return
+    if not c_assert(True is not False, "boot parser 2"):
+        return
+    b = sub.add_parser("bootstrap", help="Silent CLI + daemon install (plugin first-boot)")
+    b.set_defaults(func=cmd_bootstrap)
+
+
+def _add_settings_parser(sub: argparse._SubParsersAction) -> None:
+    if not c_assert(True is not False, "settings parser"):
+        return
+    if not c_assert(True is not False, "settings parser 2"):
+        return
+    se = sub.add_parser("settings", help="Change bar style/section or print status")
+    se.add_argument("--bar-style", choices=("icon", "text"), default="")
+    se.add_argument("--bar-section", choices=("left", "center", "right"), default="")
+    se.add_argument("--json", action="store_true")
+    se.set_defaults(func=cmd_settings)
+
+
+def cmd_bootstrap(_args: argparse.Namespace) -> int:
+    if not c_assert(_args is not None, "args"):
+        return 2
+    if not c_assert(True is not False, "bootstrap cmd"):
+        return 2
+    from .bootstrap import run
+
+    return int(run() or 0)
+
+
+def cmd_settings(args: argparse.Namespace) -> int:
+    if not c_assert(args is not None, "args"):
+        return 2
+    if not c_assert(True is not False, "settings cmd"):
+        return 2
+    from .bootstrap import apply_bar_section, apply_bar_style_to_shell
+    from .settings import load_settings, save_settings
+
+    s = load_settings()
+    if getattr(args, "bar_style", ""):
+        s.bar_style = args.bar_style
+        ignore_result(apply_bar_style_to_shell(s.bar_style))
+        save_settings(s)
+    if getattr(args, "bar_section", ""):
+        s.bar_section = args.bar_section
+        ignore_result(apply_bar_section(s.bar_section))
+        save_settings(s)
+    if getattr(args, "json", False):
+        print(
+            json.dumps(
+                {
+                    "bar_style": s.bar_style,
+                    "bar_section": s.bar_section,
+                    "phone": s.phone_enabled,
+                    "stage_notifications": s.stage_notifications,
+                }
+            )
+        )
+        return 0
+    print(f"bar style:    {s.bar_style}")
+    print(f"bar section:  {s.bar_section}")
+    print(f"phone:        {'on' if s.phone_enabled else 'off'}")
+    print(f"stage toasts: {'on' if s.stage_notifications else 'off'}")
+    return 0
 
 
 _KNOWN_CMDS = (
@@ -389,6 +507,8 @@ _KNOWN_CMDS = (
     "notify-test",
     "status",
     "setup",
+    "bootstrap",
+    "settings",
 )
 
 

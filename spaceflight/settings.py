@@ -27,7 +27,17 @@ ntfy_token = ""
 enabled = true
 # Timeline stage toasts (MECO, Max-Q, …). Toggle in TUI with 'n'.
 stage_notifications = true
+
+[bar]
+# Omarchy pill: "icon" (🚀 only) or "text" (countdown status)
+style = "text"
+# left | center | right
+section = "center"
 """
+
+
+_BAR_STYLES = frozenset({"icon", "text"})
+_BAR_SECTIONS = frozenset({"left", "center", "right"})
 
 
 @dataclass
@@ -38,6 +48,8 @@ class Settings:
     desktop_enabled: bool = True
     # Flight timeline stage toasts (prop load, Max-Q, MECO, …)
     stage_notifications: bool = True
+    bar_style: str = "text"
+    bar_section: str = "center"
 
     @property
     def phone_enabled(self) -> bool:
@@ -136,6 +148,13 @@ def load_settings() -> Settings:
             data.get("stage_notifications", True),
         )
     )
+    bar = data.get("bar") or {}
+    if not isinstance(bar, dict):
+        bar = {}
+    style = str(bar.get("style") or data.get("bar_style") or "text").strip().lower()
+    section = str(bar.get("section") or data.get("bar_section") or "center").strip().lower()
+    s.bar_style = style if style in _BAR_STYLES else "text"
+    s.bar_section = section if section in _BAR_SECTIONS else "center"
     return _apply_env_overrides(s)
 
 
@@ -184,6 +203,10 @@ def settings_to_toml(s: Settings) -> str:
         "[desktop]\n"
         f"enabled = {desk}\n"
         f"stage_notifications = {stages}\n"
+        "\n"
+        "[bar]\n"
+        f'style = "{_toml_escape(s.bar_style or "text")}"\n'
+        f'section = "{_toml_escape(s.bar_section or "center")}"\n'
     )
 
 

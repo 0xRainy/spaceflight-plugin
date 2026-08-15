@@ -4,9 +4,11 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -68,13 +70,67 @@ class TestPanelPayload(unittest.TestCase):
     def test_manifest_valid_json_and_id(self) -> None:
         data = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(data.get("id"), "0xrainy.spaceflight")
-        self.assertEqual(data.get("kinds"), ["bar-widget"])
+        self.assertIn("bar-widget", data.get("kinds") or [])
+        self.assertIn("service", data.get("kinds") or [])
         self.assertEqual(data.get("entryPoints", {}).get("barWidget"), "Widget.qml")
         self.assertTrue((ROOT / "Widget.qml").is_file())
         self.assertTrue((ROOT / "Panel.qml").is_file())
         self.assertTrue((ROOT / "LICENSE").is_file())
         self.assertIn("omarchy plugin add", (ROOT / "README.md").read_text(encoding="utf-8"))
         self.assertIn("omarchy plugin remove", (ROOT / "README.md").read_text(encoding="utf-8"))
+
+
+class TestBarSettingsAndWizard(unittest.TestCase):
+    def test_bar_style_roundtrip(self) -> None:
+        from spaceflight.settings import Settings, load_settings, save_settings
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td)
+            with mock.patch("spaceflight.config.CONFIG_DIR", cfg):
+                with mock.patch("spaceflight.settings.DEFAULT_CONFIG", cfg / "config.toml"):
+                    s = Settings()
+                    s.bar_style = "icon"
+                    s.bar_section = "left"
+                    save_settings(s)
+                    loaded = load_settings()
+                    self.assertEqual(loaded.bar_style, "icon")
+                    self.assertEqual(loaded.bar_section, "left")
+                    text = (cfg / "config.toml").read_text(encoding="utf-8")
+                    self.assertIn("[bar]", text)
+                    self.assertIn('style = "icon"', text)
+
+    def test_generate_topic_and_wizard_flag(self) -> None:
+        from spaceflight.onboard import (
+            generate_topic,
+            mark_plugin_wizard_done,
+            needs_plugin_wizard,
+            _validate_topic,
+        )
+
+        t = generate_topic()
+        self.assertTrue(t.startswith("spaceflight-"))
+        self.assertIsNone(_validate_topic(t))
+        self.assertIsNotNone(_validate_topic("short"))
+        # isolated onboard state
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch("spaceflight.onboard.ONBOARD_STATE", Path(td) / "onboard.json"):
+                with mock.patch("spaceflight.config.STATE_DIR", Path(td)):
+                    self.assertTrue(needs_plugin_wizard())
+                    mark_plugin_wizard_done()
+                    self.assertFalse(needs_plugin_wizard())
+
+    def test_cli_generate_topic(self) -> None:
+        env = {**__import__("os").environ, "PYTHONPATH": str(ROOT)}
+        r = subprocess.run(
+            [__import__("sys").executable, "-m", "spaceflight", "setup", "--generate-topic"],
+            cwd=str(ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(r.stdout.strip().startswith("spaceflight-"))
 
 
 class TestModelJs(unittest.TestCase):

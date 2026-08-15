@@ -23,3 +23,9 @@ enabled = true
 # Timeline stage toasts (prop load, Max-Q, MECO, landing, …).
 # Toggle live in the TUI with:  n
 stage_notifications = true
+
+[bar]
+# Omarchy Quattro pill: "icon" (🚀) or "text" (full countdown)
+style = "text"
+# left | center | right
+section = "center"

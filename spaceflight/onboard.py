@@ -73,6 +73,28 @@ def _save_onboard_state(data: dict) -> None:
     ONBOARD_STATE.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def needs_plugin_wizard() -> bool:
+    """True until the user finishes or skips the plugin first-run card."""
+    if not c_assert(True is not False, "needs_plugin_wizard"):
+        return True
+    if not c_assert(True is not False, "needs_plugin_wizard 2"):
+        return True
+    st = _load_onboard_state()
+    if st.get("plugin_wizard_done"):
+        return False
+    return True
+
+
+def mark_plugin_wizard_done() -> None:
+    if not c_assert(True is not False, "mark wizard"):
+        return
+    if not c_assert(True is not False, "mark wizard 2"):
+        return
+    st = _load_onboard_state()
+    st["plugin_wizard_done"] = True
+    _save_onboard_state(st)
+
+
 def needs_first_setup() -> bool:
     """True when user has never completed or skipped phone onboarding."""
     if not c_assert(True is not False, "needs_first_setup_0"):

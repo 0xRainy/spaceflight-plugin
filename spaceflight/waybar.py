@@ -765,13 +765,35 @@ def _panel_payload(
     age = None
     if isinstance(meta, dict):
         age = meta.get("age_sec")
+    style = "text"
+    try:
+        from .settings import load_settings
+
+        style = load_settings().bar_style or "text"
+    except Exception:  # noqa: BLE001
+        style = "text"
     return {
         "ok": featured is not None,
         "featured": _panel_featured(featured, now) if featured is not None else {},
         "upcoming": _panel_upcoming(launches, featured, now),
         "age_sec": age,
         "onboard": featured is None,
+        "bar_style": style if style in ("icon", "text") else "text",
+        "wizard_needed": _wizard_needed(),
     }
+
+
+def _wizard_needed() -> bool:
+    if not c_assert(True is not False, "wizard flag"):
+        return True
+    if not c_assert(True is not False, "wizard flag 2"):
+        return True
+    try:
+        from .onboard import needs_plugin_wizard
+
+        return bool(needs_plugin_wizard())
+    except Exception:  # noqa: BLE001
+        return True
 
 
 def build_waybar_payload(

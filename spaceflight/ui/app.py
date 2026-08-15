@@ -71,6 +71,9 @@ class NextApp:
         self.tick = 0
         self.show_ll2 = False
         self.ll2_scroll = 0
+        self.show_prefs = False
+        self.prefs_sel = 0
+        self.prefs_note = ""
         self._show_images = True
         self._path_img_key = ""
         self._stream_img_key = ""
@@ -316,9 +319,14 @@ class NextApp:
         msg = self.message if time.time() < self.message_until else ""
         C.footer(
             stdscr, h - 1, w,
-            "j/k  1-5  f filter  o stream  i info  c copy  n stages  r sync  ^D ll2  q",
+            "j/k  1-5  f filter  o stream  s settings  n stages  r sync  ^D ll2  q",
             message=msg,
         )
+        if self.show_prefs:
+            place_img = None
+            from spaceflight.ui import prefs as prefs_mod
+
+            prefs_mod.draw_prefs(self, stdscr, h, w)
         if self.show_ll2:
             place_img = None
             panels_mod.draw_ll2_popup(self, stdscr, h, w)
