@@ -2,12 +2,12 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Omarchy does not run plugin install hooks. The moment this service loads
-// (plugin enable, which is the end of `omarchy plugin add`), open a terminal
-// and run the interactive TUI / daemon / ntfy wizard there — never in the bar.
+// `omarchy plugin add` never runs hooks. When this service is enabled it
+// opens a *terminal* (not the bar card) for TUI/daemon/ntfy setup.
 Item {
   id: root
   property var shell: null
+  property var manifest: null
   property bool launched: false
 
   function pluginDir() {
@@ -28,9 +28,8 @@ Item {
     if (root.launched || launchProc.running)
       return
     root.launched = true
-    var script = pluginDir() + "/scripts/plugin-setup"
-    // launch-tui opens xdg-terminal-exec; do not use the bar card.
-    launchProc.command = ["omarchy-launch-tui", "--app-id=org.omarchy.spaceflight-setup", script]
+    var script = pluginDir() + "/scripts/launch-setup"
+    launchProc.command = ["/bin/bash", script]
     launchProc.running = true
   }
 
@@ -41,9 +40,9 @@ Item {
     printErrors: false
     onLoaded: {
       if (!root.setupDone(text()))
-        root.launchSetupTerminal()
+        Qt.callLater(root.launchSetupTerminal)
     }
-    onLoadFailed: root.launchSetupTerminal()
+    onLoadFailed: Qt.callLater(root.launchSetupTerminal)
     Component.onCompleted: reload()
   }
 

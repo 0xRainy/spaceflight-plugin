@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "0xrainy.spaceflight",
   "name": "Spaceflight",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "0xRainy",
   "license": "MIT",
   "description": "Live rocket launch countdown for the Omarchy Quattro bar — click for mission details, queue, NET, and window. Optional TUI and ntfy phone alerts.",

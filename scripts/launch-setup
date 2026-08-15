@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Open the interactive first-run wizard in a terminal.
+# Called from Service.qml after `omarchy plugin add` enables the plugin.
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SETUP="$ROOT/scripts/plugin-setup"
+LOG="${XDG_STATE_HOME:-$HOME/.local/state}/spaceflight/launch-setup.log"
+mkdir -p "$(dirname "$LOG")"
+{
+  echo "$(date -Iseconds) launch-setup ROOT=$ROOT"
+  ls -l "$SETUP" || true
+} >>"$LOG"
+
+if command -v omarchy-launch-tui >/dev/null 2>&1; then
+  exec omarchy-launch-tui --app-id=org.omarchy.spaceflight-setup "$SETUP"
+fi
+if command -v xdg-terminal-exec >/dev/null 2>&1; then
+  exec xdg-terminal-exec --app-id=org.omarchy.spaceflight-setup -e "$SETUP"
+fi
+if command -v ghostty >/dev/null 2>&1; then
+  exec ghostty -e "$SETUP"
+fi
+echo "no terminal launcher" >>"$LOG"
+exit 1
