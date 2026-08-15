@@ -6,8 +6,8 @@
   "author": "0xRainy",
   "license": "MIT",
   "description": "Live rocket launch countdown for the Omarchy Quattro bar — click for mission details, queue, NET, and window. Optional TUI and ntfy phone alerts.",
-  "homepage": "https://0xrainy.github.io/spaceflight-tui/",
-  "repository": "https://github.com/0xRainy/spaceflight-tui",
+  "homepage": "https://0xrainy.github.io/spaceflight-plugin/",
+  "repository": "https://github.com/0xRainy/spaceflight-plugin",
   "keywords": [
     "launch",
     "rocket",

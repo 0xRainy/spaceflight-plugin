@@ -11,8 +11,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/0xRainy/spaceflight-tui"
-Repository = "https://github.com/0xRainy/spaceflight-tui"
+Homepage = "https://github.com/0xRainy/spaceflight-plugin"
+Repository = "https://github.com/0xRainy/spaceflight-plugin"
 
 [project.optional-dependencies]
 dev = [

@@ -31,7 +31,7 @@ LOG_FILE = STATE_DIR / "daemon.log"
 LL2_BASE = "https://ll.thespacedevs.com/2.2.0"
 LL2_UPCOMING = f"{LL2_BASE}/launch/upcoming/"
 LL2_PREVIOUS = f"{LL2_BASE}/launch/previous/"
-USER_AGENT = f"Spaceflight/{VERSION} (+https://github.com/0xRainy/spaceflight-tui; launch tracker)"
+USER_AGENT = f"Spaceflight/{VERSION} (+https://github.com/0xRainy/spaceflight-plugin; launch tracker)"
 
 # RocketLaunch.Live free endpoint (next 5 launches + weather)
 RLL_NEXT = "https://fdo.rocketlaunch.live/json/launches/next/5"

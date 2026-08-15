@@ -2,7 +2,7 @@
 
 Flashy **mission control** for rocket launches — Omarchy Quattro bar plugin, terminal TUI, desktop alerts, and optional phone push via [ntfy](https://ntfy.sh).
 
-**[Project site →](https://0xrainy.github.io/spaceflight-tui/)** · live screenshots, Power of Ten, one-minute install.
+**[Project site →](https://0xrainy.github.io/spaceflight-plugin/)** · live screenshots, Power of Ten, one-minute install.
 
 Listed for **[Omarchy Quattro](https://omarchyplugins.com/)** as plugin id `0xrainy.spaceflight`. Click the bar pill for a mission card (queue, NET local/UTC, window, Now/Next stages). Right-click opens the TUI.
 
@@ -18,7 +18,7 @@ PYTHONPATH=. python3 -m unittest discover -s tests -v
 This is the only step:
 
 ```bash
-omarchy plugin add https://github.com/0xRainy/spaceflight-tui
+omarchy plugin add https://github.com/0xRainy/spaceflight-plugin
 ```
 
 Omarchy asks **left / center / right**. After enable, the plugin:
