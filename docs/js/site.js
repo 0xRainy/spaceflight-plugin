@@ -41,11 +41,7 @@
   var copyBtn = document.getElementById("copy-install");
   if (copyBtn) {
     copyBtn.addEventListener("click", function () {
-      var text = [
-        "git clone https://github.com/0xRainy/spaceflight-tui.git",
-        "cd spaceflight-tui",
-        "bash scripts/install.sh",
-      ].join("\n");
+      var text = ["omarchy plugin add https://github.com/0xRainy/spaceflight-tui"].join("\n");
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(function () {
           copyBtn.textContent = "Copied!";
