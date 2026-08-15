@@ -176,12 +176,15 @@ BarWidget {
         if (root.bar.hideTooltip)
           root.bar.hideTooltip(hit)
         root.setupComplete = root.readSetupDone(flagFile.text())
+        if (!root.setupComplete) {
+          if (mouse.button === Qt.LeftButton || mouse.button === Qt.RightButton)
+            root.launchSetup()
+          return
+        }
         if (mouse.button === Qt.RightButton)
-          root.bar.run("omarchy-launch-or-focus-tui spaceflight")
+          root.bar.run("omarchy-launch-or-focus-tui " + root.pluginDir() + "/scripts/spaceflight")
         else if (mouse.button === Qt.MiddleButton)
           root.bar.run("spaceflight refresh")
-        else if (!root.setupComplete)
-          root.launchSetup()
         else
           root.togglePanel()
       }

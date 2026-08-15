@@ -88,7 +88,7 @@ Panel {
 
   function runTui() {
     if (root.bar)
-      root.bar.run("omarchy-launch-or-focus-tui spaceflight")
+      root.bar.run("omarchy-launch-or-focus-tui " + pluginDir() + "/scripts/spaceflight")
   }
 
   function launchTerminalSetup() {
@@ -165,7 +165,7 @@ Panel {
           }
 
           Text {
-            visible: root.state.tooltip === "" && !root.state.ok
+            visible: !root.state.ok
             width: parent.width - parent.leftPadding - parent.rightPadding
             wrapMode: Text.WordWrap
             text: "Click Setup"
@@ -179,6 +179,7 @@ Panel {
             spacing: Style.space(8)
 
             Rectangle {
+              visible: root.state.ok
               width: tuiLab.implicitWidth + Style.space(16)
               height: tuiLab.implicitHeight + Style.space(8)
               radius: 6
