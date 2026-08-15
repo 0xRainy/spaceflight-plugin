@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# Open the interactive first-run wizard in a terminal.
-# Called from Service.qml after `omarchy plugin add` enables the plugin.
+# Fallback only: open ONE setup terminal if the user taps Run setup.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/spaceflight"
+FLAG="$STATE/onboard.json"
+LOCK="$STATE/launch.lock"
 SETUP="$ROOT/scripts/plugin-setup"
-LOG="${XDG_STATE_HOME:-$HOME/.local/state}/spaceflight/launch-setup.log"
-mkdir -p "$(dirname "$LOG")"
-{
-  echo "$(date -Iseconds) launch-setup ROOT=$ROOT"
-  ls -l "$SETUP" || true
-} >>"$LOG"
-
+mkdir -p "$STATE"
+if [[ -f $FLAG ]] && grep -q '"plugin_wizard_done"[[:space:]]*:[[:space:]]*true' "$FLAG"; then
+  exit 0
+fi
+exec 8>"$LOCK"
+flock -n 8 || exit 0
+if pgrep -u "$(id -u)" -f 'spaceflight plugin-setup' >/dev/null 2>&1; then
+  exit 0
+fi
+export SPACEFLIGHT_SETUP_OWN_TTY=1
 if command -v omarchy-launch-tui >/dev/null 2>&1; then
   exec omarchy-launch-tui --app-id=org.omarchy.spaceflight-setup "$SETUP"
 fi
@@ -20,5 +25,4 @@ fi
 if command -v ghostty >/dev/null 2>&1; then
   exec ghostty -e "$SETUP"
 fi
-echo "no terminal launcher" >>"$LOG"
 exit 1

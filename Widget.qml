@@ -4,7 +4,7 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 
-// Bar pill. Until terminal setup finishes, clicks open that wizard — not a card.
+// Bar pill. Left-click always opens the mission card — never a setup terminal.
 BarWidget {
   id: root
   moduleName: "0xrainy.spaceflight"
@@ -12,37 +12,6 @@ BarWidget {
   property string barText: "🚀  …"
   property string barClass: "pending"
   property string displayStyle: "text"
-  property bool setupComplete: false
-  property bool setupLaunched: false
-
-  function pluginDir() {
-    var u = String(Qt.resolvedUrl("."))
-    return u.replace(/^file:\/\//, "").replace(/\/$/, "")
-  }
-
-  function readSetupDone(raw) {
-    try {
-      var data = JSON.parse(String(raw || "{}"))
-      return data && data.plugin_wizard_done === true
-    } catch (e) {
-      return false
-    }
-  }
-
-  function launchTerminalSetup() {
-    if (setupProc.running)
-      return
-    var script = pluginDir() + "/scripts/launch-setup"
-    setupProc.command = ["/bin/bash", script]
-    setupProc.running = true
-  }
-
-  function maybeLaunchSetup() {
-    if (root.setupComplete || root.setupLaunched)
-      return
-    root.setupLaunched = true
-    root.launchTerminalSetup()
-  }
 
   function injectPanel() {
     var target = panelLoader.item
@@ -88,10 +57,6 @@ BarWidget {
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
   function open() {
-    if (!root.setupComplete) {
-      root.launchTerminalSetup()
-      return
-    }
     if (panelLoader.item && panelLoader.item.openFromHotkey)
       panelLoader.item.openFromHotkey()
   }
@@ -120,27 +85,6 @@ BarWidget {
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
-
-  FileView {
-    id: flagFile
-    path: Quickshell.env("HOME") + "/.local/state/spaceflight/onboard.json"
-    watchChanges: true
-    printErrors: false
-    onLoaded: {
-      root.setupComplete = root.readSetupDone(text())
-      if (!root.setupComplete)
-        Qt.callLater(root.maybeLaunchSetup)
-    }
-    onLoadFailed: {
-      root.setupComplete = false
-      Qt.callLater(root.maybeLaunchSetup)
-    }
-    Component.onCompleted: reload()
-  }
-
-  Process {
-    id: setupProc
-  }
 
   Loader {
     id: panelLoader
@@ -183,8 +127,6 @@ BarWidget {
           root.bar.run("omarchy-launch-or-focus-tui spaceflight")
         else if (mouse.button === Qt.MiddleButton)
           root.bar.run("spaceflight refresh")
-        else if (!root.setupComplete)
-          root.launchTerminalSetup()
         else
           root.togglePanel()
       }

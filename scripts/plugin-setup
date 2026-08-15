@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
-# Interactive first-run after `omarchy plugin add` (opened in a terminal).
+# Interactive first-run — same TTY as `omarchy plugin add` when hooked.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/spaceflight"
+FLAG="$STATE/onboard.json"
+LOCK="$STATE/setup.lock"
+mkdir -p "$STATE"
+exec 9>"$LOCK"
+flock -n 9 || exit 0
+if [[ -f $FLAG ]] && grep -q '"plugin_wizard_done"[[:space:]]*:[[:space:]]*true' "$FLAG"; then
+  exit 0
+fi
 export PYTHONPATH="${ROOT}${PYTHONPATH:+:$PYTHONPATH}"
 exec python3 -m spaceflight plugin-setup

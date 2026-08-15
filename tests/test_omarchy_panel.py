@@ -131,6 +131,29 @@ class TestBarSettingsAndWizard(unittest.TestCase):
         self.assertEqual(_ask_bar_section(StringIO("3\n"), StringIO()), "right")
         self.assertEqual(_ask_bar_section(StringIO("\n"), StringIO()), "center")
 
+    def test_plugin_setup_skips_when_wizard_done(self) -> None:
+        from io import StringIO
+        from unittest import mock
+
+        from spaceflight import plugin_setup
+
+        with mock.patch.object(plugin_setup, "needs_plugin_wizard", return_value=False):
+            with mock.patch.object(plugin_setup, "_install_core", return_value={"ok": True}) as inst:
+                code = plugin_setup.run(inp=StringIO(""), out=StringIO())
+        self.assertEqual(code, 0)
+        inst.assert_called_once()
+
+    def test_qml_does_not_auto_launch_setup(self) -> None:
+        widget = (ROOT / "Widget.qml").read_text(encoding="utf-8")
+        service = (ROOT / "Service.qml").read_text(encoding="utf-8")
+        self.assertNotIn("launch-setup", widget)
+        self.assertNotIn("maybeLaunchSetup", widget)
+        self.assertNotIn("launch-setup", service)
+        self.assertIn("first-boot", service)
+        hook = (ROOT / "scripts" / "shell-hook.bash").read_text(encoding="utf-8")
+        self.assertIn("plugin-setup", hook)
+        self.assertIn("omarchy()", hook)
+
     def test_cli_generate_topic(self) -> None:
         env = {**__import__("os").environ, "PYTHONPATH": str(ROOT)}
         r = subprocess.run(

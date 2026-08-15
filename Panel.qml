@@ -86,9 +86,9 @@ Panel {
   }
 
   function launchTerminalSetup() {
-    var script = pluginDir() + "/scripts/plugin-setup"
+    var script = pluginDir() + "/scripts/launch-setup"
     if (root.bar)
-      root.bar.run("omarchy-launch-tui --app-id=org.omarchy.spaceflight-setup " + script)
+      root.bar.run("/bin/bash " + script)
   }
 
   function openStream() {
@@ -149,7 +149,7 @@ Panel {
 
           Text {
             width: parent.width - parent.leftPadding - parent.rightPadding
-            text: "SPACEFLIGHT  ·  1.0.2"
+            text: "SPACEFLIGHT  ·  1.0.3"
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.small
@@ -160,7 +160,7 @@ Panel {
             visible: !root.state.ok
             width: parent.width - parent.leftPadding - parent.rightPadding
             wrapMode: Text.WordWrap
-            text: "Finish setup in the terminal that opened after install. If it is gone, tap Run setup."
+            text: "Finish setup in the same terminal as omarchy plugin add. If that is gone, tap Run setup."
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.body

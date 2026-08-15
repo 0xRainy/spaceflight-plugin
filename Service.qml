@@ -2,51 +2,30 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// `omarchy plugin add` never runs hooks. When this service is enabled it
-// opens a *terminal* (not the bar card) for TUI/daemon/ntfy setup.
+// Silent first-boot only. Setup questions run in the `omarchy plugin add`
+// terminal (shell hook / continue-setup). Never open extra terminals.
 Item {
   id: root
   property var shell: null
   property var manifest: null
-  property bool launched: false
+  property bool booted: false
 
   function pluginDir() {
     var u = String(Qt.resolvedUrl("."))
     return u.replace(/^file:\/\//, "").replace(/\/$/, "")
   }
 
-  function setupDone(raw) {
-    try {
-      var data = JSON.parse(String(raw || "{}"))
-      return data && data.plugin_wizard_done === true
-    } catch (e) {
-      return false
-    }
-  }
-
-  function launchSetupTerminal() {
-    if (root.launched || launchProc.running)
+  function startFirstBoot() {
+    if (root.booted || bootProc.running)
       return
-    root.launched = true
-    var script = pluginDir() + "/scripts/launch-setup"
-    launchProc.command = ["/bin/bash", script]
-    launchProc.running = true
+    root.booted = true
+    bootProc.command = ["/bin/bash", pluginDir() + "/scripts/first-boot"]
+    bootProc.running = true
   }
 
-  FileView {
-    id: flagFile
-    path: Quickshell.env("HOME") + "/.local/state/spaceflight/onboard.json"
-    watchChanges: true
-    printErrors: false
-    onLoaded: {
-      if (!root.setupDone(text()))
-        Qt.callLater(root.launchSetupTerminal)
-    }
-    onLoadFailed: Qt.callLater(root.launchSetupTerminal)
-    Component.onCompleted: reload()
-  }
+  Component.onCompleted: Qt.callLater(root.startFirstBoot)
 
   Process {
-    id: launchProc
+    id: bootProc
   }
 }

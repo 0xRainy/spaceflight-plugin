@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# If `omarchy plugin add` is still on a TTY, finish setup there (no new window).
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FLAG="${XDG_STATE_HOME:-$HOME/.local/state}/spaceflight/onboard.json"
+if [[ -f $FLAG ]] && grep -q '"plugin_wizard_done"[[:space:]]*:[[:space:]]*true' "$FLAG"; then
+  exit 0
+fi
+tty=""
+uid="$(id -u)"
+for pid in $(pgrep -u "$uid" -f '/omarchy-plugin-add' || true); do
+  t=$(readlink "/proc/$pid/fd/0" 2>/dev/null || true)
+  if [[ $t == /dev/pts/* ]]; then
+    tty=$t
+    break
+  fi
+done
+[[ -n $tty && -e $tty ]] || exit 0
+exec "$ROOT/scripts/plugin-setup" <>"$tty" >&"$tty" 2>&"$tty"
