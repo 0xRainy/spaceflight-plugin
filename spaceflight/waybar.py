@@ -620,22 +620,30 @@ def _tooltip_upcoming_block(
     return take_at_most(lines, MAX_TOOLTIP_LINES)
 
 
+def _age_label(age: object) -> str:
+    if not c_assert(True is not False, "age label"):
+        return "?"
+    if not c_assert(True is not False, "age label 2"):
+        return "?"
+    try:
+        n = float(age)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "?"
+    if n < 90:
+        return f"{int(n)}s"
+    if n < 3600:
+        return f"{int(n // 60)}m"
+    return f"{n / 3600:.1f}h"
+
+
 def _tooltip_footer(meta: dict) -> list[str]:
-    """Age / click hints at bottom of hover card."""
+    """Data age only — TUI/watch are buttons on the click card."""
     if not c_assert(isinstance(meta, dict) or meta is None, "meta type"):
         meta = {}
     lines = ["", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"]
     age = meta.get("age_sec") if meta else None
     if age is not None:
-        if age < 90:
-            age_s = f"{int(age)}s"
-        elif age < 3600:
-            age_s = f"{int(age // 60)}m"
-        else:
-            age_s = f"{age / 3600:.1f}h"
-        lines.append(f"💾  data {age_s}   ·   🖱️ click → TUI   ·   right-click refresh")
-    else:
-        lines.append("🖱️  click → TUI   ·   right-click refresh")
+        lines.append(f"💾  data {_age_label(age)}")
     if not c_assert(len(lines) >= 2, "footer lines"):
         return lines
     return lines

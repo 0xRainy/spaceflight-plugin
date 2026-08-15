@@ -51,7 +51,10 @@ class TestPanelPayload(unittest.TestCase):
         self.assertIn("panel", payload)
         panel = payload["panel"]
         self.assertTrue(panel.get("ok"))
-        self.assertTrue(str(panel.get("card") or "").startswith("🚀") or "SPACEFLIGHT" in str(panel.get("card") or ""))
+        card = str(panel.get("card") or "")
+        self.assertTrue(card.startswith("🚀") or "SPACEFLIGHT" in card)
+        self.assertNotIn("click → TUI", card)
+        self.assertNotIn("right-click refresh", card)
         feat = panel.get("featured") or {}
         self.assertEqual(feat.get("id"), "feat-1")
         self.assertIn("BlueBird", feat.get("name") or "")

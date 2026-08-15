@@ -168,7 +168,7 @@ Panel {
             visible: root.state.tooltip === "" && !root.state.ok
             width: parent.width - parent.leftPadding - parent.rightPadding
             wrapMode: Text.WordWrap
-            text: "Finish setup in the same terminal as omarchy plugin add. If that is gone, tap Run setup."
+            text: "Click the bar rocket to run first setup, or tap Run setup here."
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.body
