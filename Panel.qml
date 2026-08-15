@@ -168,7 +168,7 @@ Panel {
             visible: root.state.tooltip === "" && !root.state.ok
             width: parent.width - parent.leftPadding - parent.rightPadding
             wrapMode: Text.WordWrap
-            text: "Click the bar rocket to run first setup, or tap Run setup here."
+            text: "Click Setup"
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.body
@@ -207,7 +207,7 @@ Panel {
               Text {
                 id: setupLab
                 anchors.centerIn: parent
-                text: "Run setup"
+                text: "Setup"
                 color: root.bar ? root.bar.foreground : Color.foreground
                 font.family: root.bar ? root.bar.fontFamily : Style.font.family
                 font.pixelSize: Style.font.bodySmall
