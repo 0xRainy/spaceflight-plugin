@@ -149,7 +149,7 @@ Panel {
 
           Text {
             width: parent.width - parent.leftPadding - parent.rightPadding
-            text: "SPACEFLIGHT  ·  1.0.1"
+            text: "SPACEFLIGHT  ·  1.0.2"
             color: root.bar ? root.bar.foreground : Color.foreground
             font.family: root.bar ? root.bar.fontFamily : Style.font.family
             font.pixelSize: Style.font.small
